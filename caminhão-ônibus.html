@@ -1,0 +1,1911 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ÍTENS DE RASTREABILIDADE (CAMINHÃO/ÔNIBUS)</title>
+    <script src="firebase-config.js"></script>
+    <script src="armazem.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <!-- Alertas SweetAlert2 sempre centralizados e totalmente visíveis na parte visível da tela -->
+    <script>
+    (function () {
+        if (typeof Swal === 'undefined') return;
+
+        // Mantém o contêiner do alerta exatamente sobre a área VISÍVEL (considera zoom, barra do navegador e teclado)
+        function ajustarAreaVisivel() {
+            const c = document.querySelector('.swal2-container');
+            const vv = window.visualViewport;
+            if (!c || !vv) return;
+            c.style.setProperty('top', vv.offsetTop + 'px', 'important');
+            c.style.setProperty('left', vv.offsetLeft + 'px', 'important');
+            c.style.setProperty('width', vv.width + 'px', 'important');
+            c.style.setProperty('height', vv.height + 'px', 'important');
+            c.style.setProperty('right', 'auto', 'important');
+            c.style.setProperty('bottom', 'auto', 'important');
+        }
+        function ativarAreaVisivel() {
+            ajustarAreaVisivel();
+            if (window.visualViewport) {
+                window.visualViewport.addEventListener('resize', ajustarAreaVisivel);
+                window.visualViewport.addEventListener('scroll', ajustarAreaVisivel);
+            }
+            window.addEventListener('resize', ajustarAreaVisivel);
+        }
+        function desativarAreaVisivel() {
+            if (window.visualViewport) {
+                window.visualViewport.removeEventListener('resize', ajustarAreaVisivel);
+                window.visualViewport.removeEventListener('scroll', ajustarAreaVisivel);
+            }
+            window.removeEventListener('resize', ajustarAreaVisivel);
+        }
+
+        const fireOriginal = Swal.fire.bind(Swal);
+        Swal.fire = function (...args) {
+            if (args.length && args[0] && typeof args[0] === 'object') {
+                const opcoes = Object.assign({ position: 'center', heightAuto: false, scrollbarPadding: false }, args[0]);
+                // Botões padronizados: EXCLUIR PDF (excluir vermelho / cancelar preto) e CAMPO OBRIGATÓRIO (OK preto)
+                const tituloAlertaPadrao = String(opcoes.title || '').toUpperCase();
+                if (tituloAlertaPadrao.indexOf('EXCLUIR PDF') !== -1) { opcoes.confirmButtonColor = '#ef4444'; opcoes.cancelButtonColor = '#000000'; }
+                if (tituloAlertaPadrao.indexOf('CAMPO OBRIGAT') !== -1) { opcoes.confirmButtonColor = '#000000'; }
+                const didOpenOriginal = opcoes.didOpen;
+                const didCloseOriginal = opcoes.didClose;
+                opcoes.didOpen = function (...a) {
+                    ativarAreaVisivel();
+                    if (typeof didOpenOriginal === 'function') return didOpenOriginal.apply(this, a);
+                };
+                opcoes.didClose = function (...a) {
+                    desativarAreaVisivel();
+                    if (typeof didCloseOriginal === 'function') return didCloseOriginal.apply(this, a);
+                };
+                args[0] = opcoes;
+            }
+            return fireOriginal(...args);
+        };
+    })();
+    </script>
+    <style>
+        .swal2-container {
+            position: fixed !important;
+            top: 0 !important; right: 0 !important; bottom: 0 !important; left: 0 !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            box-sizing: border-box !important;
+            padding: 12px !important;
+            overflow-y: auto !important;
+        }
+        .swal2-popup {
+            box-sizing: border-box !important;
+            margin: auto !important;
+            max-width: 100% !important;
+            max-height: calc(100vh - 24px);
+            max-height: calc(100dvh - 24px);
+            overflow-y: auto;
+        }
+        .swal2-title,
+        .swal2-html-container {
+            overflow-wrap: anywhere;
+            word-break: break-word;
+        }
+        .swal2-html-container {
+            max-height: 55vh;
+            max-height: 55dvh;
+            overflow-y: auto;
+        }
+    </style>
+    <style>
+        :root {
+            --card-bg: #ffffff;
+            --text-main: #111827;
+            --text-muted: #6b7280;
+            --border-color: #e5e7eb;
+            --primary-dark: #0f172a;
+            --radius: 6px;
+        }
+
+        /* CSS unificado para telas */
+        canvas { touch-action: none; }
+        input { text-transform: uppercase; }
+        .assinatura-ativa {
+            cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24'><path fill='black' d='M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z'/></svg>") 0 32, auto !important;
+        }
+        .preenchido {
+            font-weight: 500 !important;
+            color: #000 !important;
+        }
+        table td {
+            color: #000000 !important;
+        }
+
+        /* Centralização vertical do texto interno nos campos input */
+        input {
+            line-height: normal !important;
+            padding-top: 2px !important;
+            padding-bottom: 2px !important;
+            vertical-align: middle !important;
+            box-sizing: border-box !important;
+        }
+
+        /* Estilos do Card de PDFs Gerados (padrão Sucata) */
+        .card { background: var(--card-bg); border-radius: var(--radius); padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid var(--border-color); }
+        .section-title { font-size: 0.8rem; font-weight: 800; color: var(--primary-dark); text-transform: uppercase; margin-bottom: 12px; letter-spacing: 0.5px; display: flex; justify-content: space-between; align-items: center; }
+        .pdf-history-header { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+        .pdf-search-wrapper { position: relative; }
+        .pdf-search-wrapper input { width: 100%; padding: 10px 12px 10px 32px; border: 1px solid var(--border-color); border-radius: var(--radius); font-size: 0.85rem; background-color: #f9fafb; color: var(--text-main); outline: none; transition: border-color 0.2s, box-shadow 0.2s; text-transform: uppercase; margin: 0; box-sizing: border-box; }
+        .pdf-search-wrapper input:focus { border-color: var(--primary-dark); background-color: #fff; }
+        .pdf-search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-size: 0.8rem; color: var(--text-muted); pointer-events: none; }
+        .pdf-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+        .pdf-card { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: #f9fafb; border: 1px solid var(--border-color); border-radius: var(--radius); padding: 10px 12px; }
+        .pdf-card-info { display: flex; align-items: center; gap: 10px; overflow: hidden; cursor: pointer; flex: 1; min-width: 0; }
+        .pdf-card-icon { font-size: 1.6rem; flex-shrink: 0; }
+        .pdf-card-text { overflow: hidden; min-width: 0; width: 100%; }
+        .pdf-card-title { font-size: 0.8rem; font-weight: 800; color: var(--primary-dark); text-transform: uppercase; word-break: break-word; overflow-wrap: break-word; white-space: normal; }
+        .pdf-card-meta { font-size: 0.65rem; color: var(--text-muted); margin-top: 2px; }
+        .pdf-card-actions { display: flex; gap: 4px; flex-shrink: 0; }
+        .btn-icon-pdf { background: none; border: none; cursor: pointer; font-size: 1rem; padding: 4px 6px; border-radius: 4px; transition: background 0.15s; }
+        .btn-icon-pdf:hover { background: rgba(0, 0, 0, 0.06); }
+        .pdf-empty-state { text-align: center; padding: 24px 12px; border: 1px dashed var(--border-color); border-radius: var(--radius); font-size: 0.7rem; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+
+        /* Regras estritas corrigidas exclusivamente para Impressão nativa do navegador */
+        @media print {
+            @page { 
+                size: A4 portrait; 
+                margin: 0.8cm !important; 
+            }
+            body { 
+                background-color: #fff !important; 
+                padding-bottom: 0 !important; 
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+            .no-print, #barra-acoes, .btn-encerrar-container, button, .container-agregados-classe, #secao-historico-pdf { 
+                display: none !important; 
+            }
+            input:disabled, input { 
+                background-color: #f3f4f6 !important; 
+                border: 1px solid #d1d5db !important; 
+                color: #000 !important;
+            }
+            tfoot { 
+                display: table-row-group !important; 
+            }
+            #table-body tr td { 
+                padding-top: 3px !important; 
+                padding-bottom: 3px !important; 
+                font-size: 11px !important; 
+            }
+            thead th { 
+                padding: 6px !important; 
+                font-size: 12px !important; 
+            }
+            tr { 
+                page-break-inside: avoid !important; 
+            }
+            canvas { 
+                height: 120px !important; 
+                width: 100% !important;
+                display: block !important;
+            }
+
+            .bloco-signature-container {
+                display: block !important;
+                width: 100% !important;
+                margin-top: 20px !important;
+                padding-top: 15px !important;
+                page-break-inside: avoid !important;
+            }
+            
+            #bloco-agentes-detran {
+                display: table !important;
+                width: 100% !important;
+                table-layout: fixed !important;
+                border-collapse: separate !important;
+                border-spacing: 16px 0 !important;
+                margin-bottom: 16px !important;
+            }
+            
+            #bloco-agentes-detran > div {
+                display: table-cell !important;
+                width: 50% !important;
+                vertical-align: top !important;
+            }
+            
+            .bloco-assinatura {
+                padding: 10px !important;
+                border: 1px solid #e5e7eb !important;
+                background-color: #f9fafb !important;
+                page-break-inside: avoid !important;
+            }
+
+            #bloco-representante-empresa {
+                display: block !important;
+                width: 50% !important;
+                margin: 0 auto !important;
+                clear: both !important;
+            }
+        }
+    </style>
+<style>
+/* Cards e modal de assinatura: todos os caracteres em maiúsculo */
+.bloco-assinatura, .bloco-assinatura *,
+[id^="box"], [id^="box"] *,
+#signatureModal, #signatureModal * { text-transform: uppercase !important; }
+.bloco-assinatura ::placeholder, #signatureModal ::placeholder { text-transform: uppercase !important; }
+</style>
+</head>
+
+<!-- Scripts Oficiais do jsPDF + plugin AutoTable -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+
+<body class="bg-[#f1f5f9] text-gray-800 font-sans min-h-screen antialiased pb-12">
+
+    <!-- HEADER PADRONIZADO -->
+    <header class="bg-[#001039] text-white shadow-md">
+        <div class="max-w-5xl mx-auto px-4 py-3 flex flex-col items-center justify-center text-center">
+            <div class="bg-blue p-1.5 rounded-lg shadow-sm mb-2">
+                <img id="appLogo" class="h-64 object-contain" alt="Logo DGAD Suporte">
+            </div>
+            
+        </div>
+    </header>
+
+    <div id="conteudo-principal" class="max-w-4xl mx-auto bg-white p-2 sm:p-8 mt-0 sm:mt-6 shadow-md rounded-none sm:rounded-lg border border-gray-200">
+        
+        <header class="text-center border-b-2 border-gray-800 pb-4 mb-6">
+            <div class="flex justify-center mb-3">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/e/e2/Ins%C3%ADgnia_bras%C3%A3o_estilizado_governos_Wilson_Witzel_e_Cl%C3%A1udio_Castro_RJ.png" alt="Brasão do Estado do Rio de Janeiro" class="h-24 w-auto object-contain">
+            </div>
+            <h1 class="text-lg sm:text-xl font-bold uppercase tracking-wide">Governo do Estado do Rio de Janeiro</h1>
+            <h2 class="text-md sm:text-lg font-semibold uppercase">Departamento de Trânsito do Estado do Rio de Janeiro - DETRAN.RJ</h2>
+            <h3 class="text-sm sm:text-md font-medium text-black-600 uppercase mt-1">Diretoria Geral das Atividades de Desmontagem</h3>
+            <h3 class="text-sm sm:text-md font-medium text-black-600 uppercase mt-1">DIVISÃO DE FISCALIZAÇÃO</h3>
+        </header>
+
+        <section class="flex flex-col gap-4 mb-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
+            <div>
+                <label class="block text-xs font-bold uppercase text-black-600 mb-1">Natureza da ATIVIDADE:</label>
+                <select id="info-natureza" onchange="atualizarCamposNatureza()" class="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-black focus:outline-none text-sm uppercase">
+                    <option value="" selected>ESCOLHA UMA OPÇÃO</option>
+                    <option value="FISCALIZAÇÃO DE EMPRESA CREDENCIADA">FISCALIZAÇÃO DE EMPRESA CREDENCIADA</option>
+                    <option value="FISCALIZAÇÃO DE PRIMEIRO CREDENCIAMENTO">FISCALIZAÇÃO DE PRIMEIRO CREDENCIAMENTO</option>
+                    <option value="FISCALIZAÇÃO DE RENOVAÇÃO DE CREDENCIAMENTO">FISCALIZAÇÃO DE RENOVAÇÃO DE CREDENCIAMENTO</option>
+                    <option value="FISCALIZAÇÃO DE APURAÇÃO DE DENÚNCIA">FISCALIZAÇÃO DE APURAÇÃO DE DENÚNCIA</option>
+                    <option value="FISCALIZAÇÃO DE FORÇA TAREFA">FISCALIZAÇÃO DE FORÇA TAREFA</option>
+                    <option value="FISCALIZAÇÃO DE APOIO">FISCALIZAÇÃO DE APOIO</option>
+                </select>
+            </div>
+            <div id="grupo-apoio" style="display: none;">
+                <label class="block text-xs font-bold uppercase text-black-600 mb-1">Apoio à:</label>
+                <input type="text" id="info-apoio" placeholder="EX.: DRFA / POLÍCIA CIVIL" oninput="var s=this.selectionStart,e=this.selectionEnd;this.value=this.value.toUpperCase();this.setSelectionRange(s,e);" class="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-black focus:outline-none text-sm uppercase">
+            </div>
+            <div id="grupo-fase-forca-tarefa" style="display: none;">
+                <label class="block text-xs font-bold uppercase text-black-600 mb-1">Fase da Força Tarefa:</label>
+                <input data-so-numeros type="text" inputmode="numeric" autocomplete="off" id="info-fase-forca-tarefa" placeholder="FASE DA FORÇA TAREFA" class="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-black focus:outline-none text-sm uppercase">
+            </div>
+            <div id="grupo-estabelecimento" style="display: none;">
+                <label class="block text-xs font-bold uppercase text-black-600 mb-1">EMPRESA / Estabelecimento:</label>
+                <input type="text" id="info-nome" placeholder="RAZÃO SOCIAL / NOME FANTASIA" class="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-black focus:outline-none text-sm uppercase">
+            </div>
+            <div id="grupo-endereco" style="display: none;">
+                <label class="block text-xs font-bold uppercase text-black-600 mb-1">Endereço:</label>
+                <input type="text" id="info-endereco" placeholder="ENDEREÇO COMPLETO" class="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-black focus:outline-none text-sm uppercase">
+            </div>
+            <div>
+                <label class="block text-xs font-bold uppercase text-black-600 mb-1">Data:</label>
+                <input type="date" id="info-data" class="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-black focus:outline-none text-sm">
+            </div>
+        </section>
+
+        <div class="text-center my-6">
+            <h2 class="text-md sm:text-lg font-semibold uppercase">ITENS DE RASTREABILIDADE OBRIGATÓRIA - CAMINHÃO/ÔNIBUS</h2>
+        </div>
+        
+        <div class="flex justify-center my-4 no-print">
+            <select id="tipo-preenchimento" onchange="atualizarColunas()" class="p-2 border border-gray-300 rounded bg-gray-50 text-sm uppercase font-bold text-gray-700 w-full max-w-md">
+                <option value="" disabled selected>ESCOLHA O MODO DE PREENCHIMENTO DA TABELA</option>
+                <option value="etiquetada">SOMENTE PEÇAS ETIQUETADAS</option>
+                <option value="nao-etiquetada">SOMENTE PEÇAS NÃO ETIQUETADAS</option>
+                <option value="completa">TABELA COMPLETA</option>
+            </select>
+        </div>
+
+        <section id="container-agregados" class="container-agregados-classe hidden no-print bg-amber-50 border-2 border-amber-300 p-4 rounded-lg mb-6 shadow-sm">
+            <div class="text-center mb-3">
+                <h3 class="text-sl font-bold text-blue-800 uppercase tracking-wider">CONTAGEM DINÂMICA DE ITENS COMPLETOS</h3>
+                <p class="text-[13px] text-amber-700 font-medium">OS VALORES INFORMADOS ABAIXO, DEVERÃO SER ADICIONADOS AOS ITENS INDIVIDUAIS E CORRESPONDENTES DA TABELA AO FINAL DA CONTAGEM, ATRAVÉS DO BOTÃO <span class="text-blue-800 font-bold">"ADICIONAR ITENS COMPLETOS"</span>!</p>
+            </div>
+            <div id="agregados-grid" class="grid grid-cols-1 gap-4"></div>
+        </section>
+
+        <section class="w-full overflow-x-auto mb-4 max-sm:-mx-2 max-sm:w-[calc(100%+16px)]">
+            <table class="w-full text-left border-collapse min-w-[320px]">
+                <thead>
+                    <tr class="bg-gray-800 text-white text-[9px] sm:text-xs uppercase">
+                        <th class="p-1 sm:p-3 text-center w-8">N°</th>
+                        <th class="p-1 sm:p-3">Peças</th>
+                        <th class="p-1 sm:p-3 text-center w-15">Etiquetadas</th>
+                        <th class="p-1 sm:p-3 text-center w-15">Não Etiquetadas</th>
+                        <th class="p-1 sm:p-3 text-center w-15">Estoque Físico</th>
+                    </tr>
+                </thead>
+                <tbody id="table-body" class="divide-y divide-gray-200 text-xs"></tbody>
+                <tfoot>
+                    <tr class="text-[9px] sm:text-xs text-gray-500 uppercase">
+                        <td class="p-1 text-center" colspan="2"></td>
+                        <td class="p-1 text-center">ETIQUETADAS</td>
+                        <td class="p-1 text-center">NÃO ETIQUETADAS</td>
+                        <td class="p-1 text-center">ESTOQUE FÍSICO</td>
+                    </tr>
+                    <tr class="bg-gray-100 font-bold text-xs sm:text-sm border-t-2 border-gray-400">
+                        <td class="p-2 sm:p-3 text-center" colspan="2">TOTAL DE PEÇAS RASTREÁVEIS</td>
+                        <td class="p-1.5 sm:p-3 text-center">
+                            <span id="total-etiquetadas" class="bg-green-400 text-center w-full block sm:inline-block sm:w-auto px-1.5 sm:px-3 py-1 rounded">0</span>
+                        </td>
+                        <td class="p-1.5 sm:p-3 text-center relative">
+                            <span class="absolute -left-2 top-1/2 transform -translate-y-1/2 text-gray-400 font-bold">+</span>
+                            <span id="total-nao-etiquetadas" class="bg-red-400 text-center w-full block sm:inline-block sm:w-auto px-1.5 sm:px-3 py-1 rounded">0</span>
+                            <span class="absolute -right-2 top-1/2 transform -translate-y-1/2 text-gray-400 font-bold">=</span>
+                        </td>
+                        <td class="p-1.5 sm:p-3 text-center">
+                            <span id="total-est-fisico" class="bg-green-400 text-center w-full block sm:inline-block sm:w-auto px-1.5 sm:px-3 py-1 rounded">0</span>
+                        </td>
+                    </tr>
+                </tfoot>
+            </table>
+        </section>
+
+        <section class="bloco-signature-container flex flex-col items-center gap-6 pt-6 border-t border-gray-300">
+            <div id="bloco-agentes-detran" class="w-full grid grid-cols-1 md:grid-cols-2 gap-6 justify-center">
+                <div class="bloco-assinatura flex flex-col justify-between p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                    <div class="mb-3">
+                        <label class="block text-xs font-bold uppercase text-black-500 mb-1">ASSINATURA DIGITALIZADA:</label>
+                        <canvas id="sig-agente1" class="w-full h-72 sm:h-52 bg-white border border-dashed border-gray-400 rounded pointer-events-none"></canvas>
+                        <div class="flex justify-between items-center mt-2">
+                            <button onclick="habilitarAssinatura('sig-agente1')" class="no-print px-3 py-1.5 bg-blue-900 hover:bg-blue-800 text-white font-semibold text-xs rounded shadow transition inline-flex items-center gap-1.5"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span>ASSINAR</span></button>
+                            <button onclick="clearCanvas('sig-agente1')" class="no-print text-xs text-red-600 font-bold hover:underline">APAGAR ASSINATURA</button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold uppercase text-black-600 mb-1">ID FUNCIONAL:</label>
+                        <input type="text" inputmode="numeric" autocomplete="off" id="mat-agente1" placeholder="0000000-0" maxlength="9" oninput="aplicarMascaraMatricula(this)" class="w-full p-2 border border-gray-300 rounded text-sm font-mono">
+                    </div>
+                    <p class="text-center font-bold text-xs uppercase tracking-wide mt-4 pt-2 border-t border-gray-300 text-black-700">Agente do Detran.RJ</p>
+                </div>
+
+                <div class="bloco-assinatura flex flex-col justify-between p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                    <div class="mb-3">
+                        <label class="block text-xs font-bold uppercase text-black-500 mb-1">ASSINATURA DIGITALIZADA:</label>
+                        <canvas id="sig-agente2" class="w-full h-72 sm:h-52 bg-white border border-dashed border-gray-400 rounded pointer-events-none"></canvas>
+                        <div class="flex justify-between items-center mt-2">
+                            <button onclick="habilitarAssinatura('sig-agente2')" class="no-print px-3 py-1.5 bg-blue-900 hover:bg-blue-800 text-white font-semibold text-xs rounded shadow transition inline-flex items-center gap-1.5"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span>ASSINAR</span></button>
+                            <button onclick="clearCanvas('sig-agente2')" class="no-print text-xs text-red-600 font-bold hover:underline">APAGAR ASSINATURA</button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold uppercase text-black-600 mb-1">ID FUNCIONAL:</label>
+                        <input type="text" inputmode="numeric" autocomplete="off" id="mat-agente2" placeholder="0000000-0" maxlength="9" oninput="aplicarMascaraMatricula(this)" class="w-full p-2 border border-gray-300 rounded text-sm font-mono">
+                    </div>
+                    <p class="text-center font-bold text-xs uppercase tracking-wide mt-4 pt-2 border-t border-gray-300 text-black-700">Agente do Detran.RJ</p>
+                </div>
+            </div>
+
+            <div id="bloco-representante-empresa" class="bloco-assinatura w-full md:w-1/2 flex flex-col justify-between p-4 bg-gray-50 border border-gray-200 rounded-lg mx-auto">
+                <div class="mb-3">
+                    <label class="block text-xs font-bold uppercase text-black-500 mb-1">ASSINATURA DIGITALIZADA:</label>
+                    <canvas id="sig-empresa" class="w-full h-72 sm:h-52 bg-white border border-dashed border-gray-400 rounded pointer-events-none"></canvas>
+                    <div class="flex justify-between items-center mt-2">
+                        <button onclick="habilitarAssinatura('sig-empresa')" class="no-print px-3 py-1.5 bg-blue-900 hover:bg-blue-800 text-white font-semibold text-xs rounded shadow transition inline-flex items-center gap-1.5"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span>ASSINAR</span></button>
+                        <button onclick="clearCanvas('sig-empresa')" class="no-print text-xs text-red-600 font-bold hover:underline">APAGAR ASSINATURA</button>
+                    </div>
+                </div>
+                <div class="space-y-2">
+                    <div>
+                        <label class="block text-xs font-bold uppercase text-black-600 mb-1">NOME:</label>
+                        <input type="text" id="nome-rep" placeholder="NOME COMPLETO" class="w-full p-2 border border-gray-300 rounded text-sm uppercase">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold uppercase text-black-600 mb-1">CPF:</label>
+                        <input type="text" id="cpf-rep" inputmode="numeric" placeholder="000.000.000-00" maxlength="14" oninput="aplicarMascaraCPF(this)" class="w-full p-2 border border-gray-300 rounded text-sm font-mono">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold uppercase text-black-600 mb-1">TEL.:</label>
+                        <input type="tel" id="tel-rep" inputmode="numeric" placeholder="(00) 00000-0000" maxlength="15" oninput="aplicarMascaraTelefone(this)" class="w-full p-2 border border-gray-300 rounded text-sm font-mono">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold uppercase text-black-600 mb-1">E-MAIL:</label>
+                        <input type="text" id="e-mail-rep" placeholder="REPRESENTANTE OU EMPRESA" class="w-full p-2 border border-gray-300 rounded text-sm uppercase">
+                    </div>
+                </div>
+                <p class="text-center font-bold text-xs uppercase tracking-wide mt-4 pt-2 border-t border-gray-300 text-black-700">Representante da Empresa / ESTABELECIMENTO</p>
+            </div>
+        </section>
+
+        <div id="barra-acoes" class="no-print mt-8 flex flex-col sm:flex-row flex-wrap gap-3 justify-end items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+            <button id="btn-processar-agregados" type="button" onclick="encerrarContagemAgregados()"
+    class="hidden w-full sm:w-auto px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-white font-bold rounded-lg text-sm shadow-md transition flex items-center justify-center space-x-2">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="12" y1="8" x2="12" y2="16"/>
+        <line x1="8" y1="12" x2="16" y2="12"/>
+    </svg>
+    <span>ADICIONAR ITENS COMPLETOS</span>
+</button>
+            <button type="button" onclick="limparTabela()"
+                class="w-full sm:w-auto px-4 py-2.5 bg-red-600 hover:bg-red-500 border border-red-200 text-white font-bold rounded-lg text-sm  transition flex items-center justify-center space-x-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+                <span>LIMPAR PÁGINA</span>
+            </button>
+            <button type="button" onclick="compartilharPDFWhatsApp()"
+                class="w-full sm:w-auto px-5 py-2.5 bg-green-600 hover:bg-green-500 text-white font-bold rounded-lg text-sm shadow-md transition flex items-center justify-center space-x-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>
+                <span>COMPARTILHAR RESUMO (WHATSAPP)</span>
+            </button>
+            <button type="button" onclick="perguntarResumoWhatsAppAntesDoPDF()"
+                class="w-full sm:w-auto px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg text-sm shadow-md transition flex items-center justify-center space-x-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 22h14a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v4"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m3 15 2 2 4-4"/></svg>
+                <span>GERAR PDF</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- SEÇÃO DE HISTÓRICO DE PDFS GERADOS (PADRÃO SUCATA) -->
+    <div class="card no-print max-w-4xl mx-auto mt-6" id="secao-historico-pdf">
+      <div class="pdf-history-header">
+        <div class="section-title" style="margin-bottom: 0;">
+          <span>📄 PDF'S GERADOS - ITENS DE RASTREABILIDADE DE CAMINHÃO/ÔNIBUS</span>
+        </div>
+        <div class="pdf-search-wrapper" style="margin-top: 8px;">
+          <span class="pdf-search-icon">🔍</span>
+          <input type="text" id="busca-pdf" oninput="renderizarGridPDFs()" placeholder="BUSCAR PDF POR EMPRESA, NATUREZA OU DATA...">
+        </div>
+      </div>
+      <div class="pdf-grid" id="grid-pdfs-container">
+        <!-- Os cards de PDF serão inseridos aqui via JavaScript -->
+      </div>
+    </div>
+
+<script type="text/armazem">
+    const LOGO_DGAD_SUPORTE = "caminhao-onibus.png";
+    window.addEventListener('DOMContentLoaded', () => {
+        const logo = document.getElementById('appLogo');
+        if (logo) logo.src = LOGO_DGAD_SUPORTE;
+        renderizarGridPDFs();
+        atualizarCamposNatureza();
+    });
+
+    function normalizarTexto(texto) {
+        return (texto || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
+    }
+
+    function atualizarCamposNatureza() {
+        const natureza = document.getElementById('info-natureza').value;
+    const grupoApoio = document.getElementById('grupo-apoio');
+        const grupoFase = document.getElementById('grupo-fase-forca-tarefa');
+        const grupoEstab = document.getElementById('grupo-estabelecimento');
+        const grupoEndereco = document.getElementById('grupo-endereco');
+
+        if (!natureza) {
+            grupoApoio.style.display = 'none';
+            grupoFase.style.display = 'none';
+            grupoEstab.style.display = 'none';
+            grupoEndereco.style.display = 'none';
+            return;
+        }
+
+        const semFaseNemEndereco = [
+            'FISCALIZAÇÃO DE EMPRESA CREDENCIADA',
+            'FISCALIZAÇÃO DE PRIMEIRO CREDENCIAMENTO',
+            'FISCALIZAÇÃO DE RENOVAÇÃO DE CREDENCIAMENTO'
+        ].includes(natureza);
+        const semFase = natureza === 'FISCALIZAÇÃO DE APURAÇÃO DE DENÚNCIA' || natureza === 'FISCALIZAÇÃO DE APOIO';
+
+        grupoEstab.style.display = '';
+        grupoApoio.style.display = natureza === 'FISCALIZAÇÃO DE APOIO' ? '' : 'none';
+
+        if (semFaseNemEndereco) {
+            grupoFase.style.display = 'none';
+            grupoEndereco.style.display = 'none';
+        } else if (semFase) {
+            grupoFase.style.display = 'none';
+            grupoEndereco.style.display = '';
+        } else {
+            grupoFase.style.display = '';
+            grupoEndereco.style.display = '';
+        }
+    }
+
+const pecas = [
+    "ALTERNADOR",
+    "ASSOALHO CABINE",
+    "BANCO DIANTEIRO PASSAGEIRO",
+    "BANCO MOTORISTA",
+    "BLOCO DO MOTOR",
+    "BOMBA DE ALTA PRESSÃO",
+    "BOMBA HIDRÁULICA",
+    "BOMBA INJETORA",
+    "CABEÇOTES",
+    "CAIXA DO REDUTOR",
+    "CAIXA DE MARCHA",
+    "CAPA DO PAINEL",
+    "CAPÔ",
+    "CARDAS",
+    "CARROCERIA/IMPLEMENTOS",
+    "CARTER",
+    "CLIMATIZADOR",
+    "COMPRESSOR DE AR",
+    "CONDENSADOR DO AR CONDICIONADO",
+    "CONSOLE CENTRAL",
+    "CABINE",
+    "DIFERENCIAIS",
+    "EIXOS",
+    "FARÓIS",
+    "GRADE DO MOTOR",
+    "INTERCOOLER",
+    "LANTERNAS",
+    "LATERAIS DA CABINE",
+    "MAGNÉTICO/MIOLO DA HÉLICE",
+    "MÓDULO DE INJEÇÃO",
+    "MÓDULO ELETRÔNICO CABINE",
+    "MOTOR DE ARRANQUE",
+    "PAINEL DE INSTRUMENTOS",
+    "PARA-CHOQUES",
+    "PARA-LAMAS",
+    "PISTÕES HIDRÁULICOS (CABINE/CAÇAMBA)",
+    "PORTAS",
+    "QUINTA RODA",
+    "RADIADOR",
+    "RETROVISORES",
+    "RODAS",
+    "INVERSOR ELÉTRICO",
+    "SUSPENSOR DO BANCO",
+    "TACÓGRAFO",
+    "TANQUES DE COMBUSTÍVEL",
+    "TETO",
+    "TRASEIRA CABINE",
+    "TURBINAS",
+    "TURBINA 2",
+    "VOLANTE DO MOTOR",
+    "VOLANTE DO MOTORISTA"
+];
+
+const tbody = document.getElementById('table-body');
+
+const mapeamentoAgregados = {
+    "kit-code": ["MÓDULO DE INJEÇÃO", "MÓDULO ELETRÔNICO CABINE", "PAINEL DE INSTRUMENTOS"],
+    "motor-completo": ["BLOCO DO MOTOR", "CABEÇOTES", "CARTER"],
+    "radiador-completo": ["CONDENSADOR DO AR CONDICIONADO", "RADIADOR"]
+};
+
+let dadosAgregadosPorModo = {
+    "etiquetada": { "kit-code-etq": "", "motor-completo-etq": "", "radiador-completo-etq": "" },
+    "nao-etiquetada": { "kit-code-netq": "", "motor-completo-netq": "", "radiador-completo-netq": "" },
+    "completa": { 
+        "kit-code-etq": "", "motor-completo-etq": "", "radiador-completo-etq": "",
+        "kit-code-netq": "", "motor-completo-netq": "", "radiador-completo-netq": "" 
+    }
+};
+
+pecas.forEach((peca, index) => {
+    const num = String(index + 1).padStart(2, '0');
+    const row = document.createElement('tr');
+    row.innerHTML = `<td class="p-1 sm:p-2 text-center font-mono text-gray-500 bg-gray-50 text-[11px] sm:text-sm">${num}</td>
+                     <td class="p-1 sm:p-2 font-medium text-gray-700 text-[10px] sm:text-sm whitespace-normal break-words leading-tight">${peca}</td>
+                     <td class="p-1 sm:p-2 text-center"><input type="text" inputmode="numeric" pattern="[0-9]*" value="" oninput="this.value = this.value.replace(/[^0-9]/g, ''); calcularLinha(this)" onfocus="this.select()" class="input-etiquetada w-full sm:w-20 p-1 border border-gray-300 rounded text-center text-xs sm:text-sm"></td>
+                     <td class="p-1 sm:p-2 text-center"><input type="text" inputmode="numeric" pattern="[0-9]*" value="" oninput="this.value = this.value.replace(/[^0-9]/g, ''); calcularLinha(this)" onfocus="this.select()" class="input-nao-etiquetada w-full sm:w-20 p-1 border border-gray-300 rounded text-center text-xs sm:text-sm"></td>
+                     <td class="p-1 sm:p-2 text-center bg-gray-50"><input type="text" value="" disabled class="input-est-fisico w-full sm:w-20 p-1 border border-gray-200 rounded text-center font-semibold text-gray-700 bg-gray-100 cursor-not-allowed text-xs sm:text-sm"></td>`;
+    tbody.appendChild(row);
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.input-etiquetada, .input-nao-etiquetada').forEach(input => {
+        input.disabled = true;
+        input.classList.add('bg-gray-100', 'cursor-not-allowed');
+    });
+});
+
+function atualizarColunas(isInitialLoad = false) {
+    const escolha = document.getElementById('tipo-preenchimento').value;
+    const inputsEtq = document.querySelectorAll('.input-etiquetada');
+    const inputsNEtq = document.querySelectorAll('.input-nao-etiquetada');
+
+    inputsEtq.forEach(input => {
+        const deveDesabilitar = (!escolha || escolha === 'nao-etiquetada');
+        input.disabled = deveDesabilitar;
+        input.classList.toggle('bg-gray-100', deveDesabilitar);
+        input.classList.toggle('cursor-not-allowed', deveDesabilitar);
+        if (deveDesabilitar && !isInitialLoad) input.value = '';
+    });
+
+    inputsNEtq.forEach(input => {
+        const deveDesabilitar = (!escolha || escolha === 'etiquetada');
+        input.disabled = deveDesabilitar;
+        input.classList.toggle('bg-gray-100', deveDesabilitar);
+        input.classList.toggle('cursor-not-allowed', deveDesabilitar);
+        if (deveDesabilitar && !isInitialLoad) input.value = '';
+    });
+    
+    document.querySelectorAll('.input-etiquetada').forEach(i => calcularLinha(i));
+    renderizarCamposAgregados(escolha);
+}
+
+function renderizarCamposAgregados(modo) {
+    const container = document.getElementById('container-agregados');
+    const grid = document.getElementById('agregados-grid');
+    const btnEncerrar = document.getElementById('btn-processar-agregados');
+    
+    if(!modo) {
+        container.classList.add('hidden');
+        btnEncerrar.classList.add('hidden');
+        return;
+    }
+    
+    container.classList.remove('hidden');
+    btnEncerrar.classList.remove('hidden');
+    grid.innerHTML = '';
+
+    const labels = {
+        "kit-code": "Kit Code: (Módulo Injeção / Módulo Eletrônico Cabine / Painel)",
+        "motor-completo": "Motor Completo: (Bloco / Cabeçotes / Carter)",
+        "radiador-completo": "Radiador Completo: (Condensador do Ar / Radiador)"
+    };
+
+    if (modo === 'etiquetada' || modo === 'nao-etiquetada') {
+        grid.className = "grid grid-cols-1 md:grid-cols-3 gap-4";
+        const sufixo = modo === 'etiquetada' ? 'etq' : 'netq';
+        const colLabel = modo === 'etiquetada' ? 'Etiquetado' : 'Não Etiquetado';
+        const labelColorClass = modo === 'etiquetada' ? 'text-green-600 font-bold' : 'text-red-600 font-bold';
+        const inputBg = modo === 'etiquetada' ? 'border-green-400 focus:ring-green-500' : 'border-red-400 focus:ring-red-500';
+
+        Object.keys(labels).forEach(chave => {
+            const campoId = `${chave}-${sufixo}`;
+            const valorAtual = dadosAgregadosPorModo[modo][campoId] || "";
+            grid.innerHTML += `
+                <div class="bg-white p-3 rounded border border-gray-200 shadow-sm">
+                    <label class="block text-xs font-bold uppercase text-gray-700 mb-1 text-center">${labels[chave]}</label>
+                    <div class="flex items-center gap-2">
+                        <span class="text-[10px] ${labelColorClass} uppercase">${colLabel}:</span>
+                        <input type="text" id="${campoId}" inputmode="numeric" pattern="[0-9]*" value="${valorAtual}" 
+                            oninput="atualizarValorAgregadoMemoria('${modo}', '${campoId}', this)" 
+                            class="w-full p-1.5 border ${inputBg} rounded text-center text-sm font-bold bg-amber-50/50">
+                    </div>
+                </div>`;
+        });
+    } else if (modo === 'completa') {
+        grid.className = "grid grid-cols-1 md:grid-cols-3 gap-4";
+        
+        Object.keys(labels).forEach(chave => {
+            const idEtq = `${chave}-etq`;
+            const idNEtq = `${chave}-netq`;
+            const valEtq = dadosAgregadosPorModo['completa'][idEtq] || "";
+            const valNEtq = dadosAgregadosPorModo['completa'][idNEtq] || "";
+
+            grid.innerHTML += `
+                <div class="bg-white p-3 rounded border border-gray-200 shadow-sm flex flex-col justify-between">
+                    <label class="block text-xs font-bold uppercase text-gray-700 mb-2 text-center border-b pb-1">${labels[chave]}</label>
+                    <div class="space-y-2">
+                        <div class="flex items-center justify-between gap-2">
+                            <span class="text-[10px] font-bold text-green-600 uppercase">ETIQUETADO:</span>
+                            <input type="text" id="${idEtq}" inputmode="numeric" pattern="[0-9]*" value="${valEtq}" 
+                                oninput="atualizarValorAgregadoMemoria('completa', '${idEtq}', this)" 
+                                class="w-24 p-1 border border-green-400 rounded text-center text-xs font-bold bg-amber-50/50">
+                        </div>
+                        <div class="flex items-center justify-between gap-2">
+                            <span class="text-[10px] font-bold text-red-600 uppercase">NÃO ETIQUETADO:</span>
+                            <input type="text" id="${idNEtq}" inputmode="numeric" pattern="[0-9]*" value="${valNEtq}" 
+                                oninput="atualizarValorAgregadoMemoria('completa', '${idNEtq}', this)" 
+                                class="w-24 p-1 border border-red-400 rounded text-center text-xs font-bold bg-amber-50/50">
+                        </div>
+                    </div>
+                </div>`;
+        });
+    }
+}
+
+function atualizarValorAgregadoMemoria(modo, campoId, input) {
+    input.value = input.value.replace(/[^0-9]/g, '');
+    dadosAgregadosPorModo[modo][campoId] = input.value;
+    salvarProgresso();
+}
+
+function encerrarContagemAgregados() {
+    const modo = document.getElementById('tipo-preenchimento').value;
+    if (!modo) return;
+
+    let houveSoma = false;
+    const blocoDados = dadosAgregadosPorModo[modo];
+    const temDados = Object.values(blocoDados).some(val => val !== "" && parseInt(val) > 0);
+    
+    if (!temDados) {
+        const container = document.getElementById('container-agregados');
+        if (container) {
+            container.classList.add('ring-4', 'ring-red-600', 'transition-all');
+        }
+        Swal.fire({
+            icon: 'info',
+            title: 'NENHUM ITEM COMPLETO ENCONTRADO!',
+            html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> INSIRA O VALOR NO CAMPO DA <span class="text-red-600 font-bold">"CONTAGEM DINÂMICA DE ITENS COMPLETOS"</span> PARA ADICIONÁ-LO À TABELA!',
+            confirmButtonColor: '#000000',
+            returnFocus: false,
+            didClose: () => {
+                if (container) {
+                    irParaCampoAposAlerta(container, container.querySelector('input'));
+                    setTimeout(() => { container.classList.remove('ring-4', 'ring-red-600'); }, 2500);
+                }
+            }
+        });
+        return;
+    }
+
+    Object.keys(mapeamentoAgregados).forEach(chaveAgregada => {
+        const pecasAlvo = mapeamentoAgregados[chaveAgregada];
+        const valorEtq = parseInt(blocoDados[`${chaveAgregada}-etq`]) || 0;
+        const valorNEtq = parseInt(blocoDados[`${chaveAgregada}-netq`]) || 0;
+        const linhas = document.querySelectorAll('#table-body tr');
+
+        linhas.forEach(row => {
+            const nomePecaTabela = row.cells[1].innerText.trim().toUpperCase();
+            if (pecasAlvo.includes(nomePecaTabela)) {
+                if (valorEtq > 0) {
+                    const inputEtq = row.querySelector('.input-etiquetada');
+                    if (inputEtq && !inputEtq.disabled) {
+                        const abrir = parseInt(inputEtq.value) || 0;
+                        inputEtq.value = abrir + valorEtq;
+                        calcularLinha(inputEtq);
+                        houveSoma = true;
+                    }
+                }
+                if (valorNEtq > 0) {
+                    const inputNEtq = row.querySelector('.input-nao-etiquetada');
+                    if (inputNEtq && !inputNEtq.disabled) {
+                        const abrir = parseInt(inputNEtq.value) || 0;
+                        inputNEtq.value = abrir + valorNEtq;
+                        calcularLinha(inputNEtq);
+                        houveSoma = true;
+                    }
+                }
+            }
+        });
+    });
+
+    if (houveSoma) {
+        Object.keys(blocoDados).forEach(chave => { blocoDados[chave] = ""; });
+        renderizarCamposAgregados(modo);
+        salvarProgresso();
+
+        Swal.fire({
+            icon: 'success',
+            title: 'ITENS COMPLETOS ADICIONADOS À TABELA COM SUCESSO!',
+            html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> OS VALORES DA <b>"CONTAGEM DINÂMICA DE ITENS COMPLETOS"</b> FORAM ADICIONADOS AOS ITENS INDIVIDUAIS E CORRESPONDENTES DA TABELA!',
+            confirmButtonColor: '#000000'
+        });
+    }
+}
+
+function verificarDadosPendentesAgregados() {
+    const modo = document.getElementById('tipo-preenchimento').value;
+    if (!modo) return false;
+    const blocoDados = dadosAgregadosPorModo[modo];
+    return Object.values(blocoDados).some(val => val !== "" && parseInt(val) > 0);
+}
+
+function calcularLinha(input) {
+    if (!input) return;
+    const row = input.closest('tr');
+    if (!row) return;
+    
+    const inputEtq = row.querySelector('.input-etiquetada');
+    const inputNEtq = row.querySelector('.input-nao-etiquetada');
+    const valorValido = (el) => el && el.value !== "";
+
+    if (valorValido(inputEtq)) { inputEtq.classList.add('preenchido'); } else if(inputEtq) { inputEtq.classList.remove('preenchido'); }
+    if (valorValido(inputNEtq)) { inputNEtq.classList.add('preenchido'); } else if(inputNEtq) { inputNEtq.classList.remove('preenchido'); }
+
+    const etq = inputEtq ? (parseInt(inputEtq.value) || 0) : 0;
+    const nEtq = inputNEtq ? (parseInt(inputNEtq.value) || 0) : 0;
+    const campoTotal = row.querySelector('.input-est-fisico');
+
+    if (campoTotal) {
+        campoTotal.value = etq + nEtq;
+        if (valorValido(inputEtq) || valorValido(inputNEtq)) {
+            campoTotal.classList.add('preenchido');
+        } else {
+            campoTotal.classList.remove('preenchido');
+        }
+    }
+    
+    requestAnimationFrame(() => { calcularTotaisGerais(); });
+}
+
+function calcularTotaisGerais() {
+    let tEtq = 0, tNEtq = 0, tFis = 0;
+    document.querySelectorAll('.input-etiquetada').forEach(i => tEtq += parseInt(i.value) || 0);
+    document.querySelectorAll('.input-nao-etiquetada').forEach(i => tNEtq += parseInt(i.value) || 0);
+    document.querySelectorAll('.input-est-fisico').forEach(i => tFis += parseInt(i.value) || 0);
+    
+    document.getElementById('total-etiquetadas').innerText = tEtq;
+    document.getElementById('total-nao-etiquetadas').innerText = tNEtq;
+    
+    const elTotalFisico = document.getElementById('total-est-fisico');
+    elTotalFisico.innerText = tFis;
+    
+    if (tNEtq >= 1) {
+        elTotalFisico.classList.remove('bg-green-400');
+        elTotalFisico.classList.add('bg-orange-300');
+    } else {
+        elTotalFisico.classList.remove('bg-orange-300');
+        elTotalFisico.classList.add('bg-green-400');
+    }
+}
+
+let canvasAtivoId = null;
+
+function habilitarAssinatura(canvasId) {
+    if (canvasAtivoId && canvasAtivoId !== canvasId) {
+        desativarAssinatura(canvasAtivoId);
+    }
+
+    const canvas = document.getElementById(canvasId);
+    canvas.classList.remove('pointer-events-none');
+    canvas.classList.add('border-blue-500', 'border-solid', 'assinatura-ativa'); 
+    canvas.classList.remove('border-dashed', 'border-gray-400');
+    canvas.style.cursor = 'crosshair';
+    canvasAtivoId = canvasId;
+}
+
+function desativarAssinatura(canvasId) {
+    const canvas = document.getElementById(canvasId);
+    if (canvas) {
+        canvas.classList.add('pointer-events-none');
+        canvas.classList.remove('border-blue-500', 'assinatura-ativa'); 
+        canvas.classList.add('border-gray-400');
+        if (canvasAtivoId === canvasId) canvasAtivoId = null;
+    }
+}
+
+function clearCanvas(canvasId) {
+    const canvas = document.getElementById(canvasId);
+    if (canvas) {
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        salvarProgresso();
+    }
+}
+
+document.addEventListener('click', (event) => {
+    if (canvasAtivoId) {
+        const canvasAtivo = document.getElementById(canvasAtivoId);
+        if (!canvasAtivo.contains(event.target) && !event.target.closest(`[onclick*="${canvasAtivoId}"]`)) {
+            desativarAssinatura(canvasAtivoId);
+        }
+    }
+});
+
+function isCanvasEmpty(canvasId) {
+    const canvas = document.getElementById(canvasId);
+    const ctx = canvas.getContext('2d');
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    for (let i = 3; i < data.length; i += 4) { if (data[i] > 0) return false; }
+    return true;
+}
+
+function rolarCampoParaCentro(el, aoTerminar) {
+    if (!el || !el.getBoundingClientRect) {
+        if (aoTerminar) aoTerminar();
+        return;
+    }
+    const rect = el.getBoundingClientRect();
+    const meio = rect.top + window.pageYOffset - (window.innerHeight / 2) + (rect.height / 2);
+    window.scrollTo({ top: Math.max(0, meio), behavior: 'smooth' });
+    if (!aoTerminar) return;
+
+    // aguarda a rolagem suave terminar para só então executar a ação (colocar o cursor)
+    let ultimo = window.pageYOffset, estavel = 0, quadros = 0;
+    const acompanhar = () => {
+        quadros++;
+        const atual = window.pageYOffset;
+        estavel = Math.abs(atual - ultimo) < 1 ? estavel + 1 : 0;
+        ultimo = atual;
+        if (estavel >= 8 || quadros > 90) aoTerminar();
+        else requestAnimationFrame(acompanhar);
+    };
+    requestAnimationFrame(acompanhar);
+}
+
+function focarNoCampo(el) {
+    if (!el || !el.focus) return;
+    try { el.focus({ preventScroll: true }); } catch (_) { el.focus(); }
+    try { if (el.select && el.tagName !== 'SELECT') el.select(); } catch (_) {}
+}
+
+// Chamada SOMENTE depois que o alerta fechou: rola o campo para o meio da tela e então coloca o cursor
+function irParaCampoAposAlerta(alvo, campo) {
+    setTimeout(() => {
+        rolarCampoParaCentro(alvo, () => focarNoCampo(campo));
+    }, 120);
+}
+
+function mostrarAlertaAviso(titulo, mensagemHTML, elementoParaFocar) {
+    let elementoAlvo = elementoParaFocar;
+    if (elementoParaFocar) {
+        if (elementoParaFocar.tagName === 'INPUT' && elementoParaFocar.closest('tr')) {
+            elementoAlvo = elementoParaFocar.closest('tr');
+        } else if (elementoParaFocar.tagName === 'CANVAS') {
+            elementoAlvo = elementoParaFocar.closest('.bloco-assinatura') || elementoParaFocar;
+        }
+        elementoAlvo.classList.add('ring-4', 'ring-red-600', 'transition-all', 'duration-300');
+    }
+
+    Swal.fire({
+        icon: 'warning',
+        title: titulo,
+        html: mensagemHTML,
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#000000',
+        customClass: { popup: 'font-sans' },
+        returnFocus: false,
+        didClose: () => {
+            if (elementoParaFocar) {
+                irParaCampoAposAlerta(elementoAlvo, elementoParaFocar);
+                setTimeout(() => {
+                    if (elementoAlvo) elementoAlvo.classList.remove('ring-4', 'ring-red-600');
+                }, 2500);
+            }
+        }
+    });
+}
+
+function perguntarResumoWhatsAppAntesDoPDF() {
+    Swal.fire({
+        icon: 'question',
+        title: 'RESUMO NO WHATSAPP',
+        html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> O <b>RESUMO NO WHATSAPP</b> JÁ FOI COMPARTILHADO?',
+        showCancelButton: true,
+        allowOutsideClick: false,
+        confirmButtonColor: '#000000',
+        cancelButtonColor: '#d33',
+        confirmButtonText: 'SIM, JÁ FOI',
+        cancelButtonText: 'NÃO, AINDA NÃO'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            gerarPDFPersonalizado();
+            return;
+        }
+        if (result.dismiss === Swal.DismissReason.cancel) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'COMPARTILHE O RESUMO PRIMEIRO',
+                html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> O BOTÃO <b>"GERAR PDF"</b> SÓ É LIBERADO APÓS O COMPARTILHAMENTO DO <span class="text-red-500 font-bold">RESUMO NO WHATSAPP</span>!',
+                showCancelButton: true,
+                allowOutsideClick: false,
+                confirmButtonColor: '#16a34a',
+                cancelButtonColor: '#000000',
+                confirmButtonText: 'COMPARTILHAR AGORA',
+                cancelButtonText: 'FECHAR'
+            }).then((r2) => {
+                if (r2.isConfirmed) compartilharPDFWhatsApp();
+            });
+        }
+    });
+}
+
+function validarFormulario(acaoSucesso = null) {
+    if (verificarDadosPendentesAgregados()) {
+        const btnAgregados = document.getElementById('btn-processar-agregados');
+        if (btnAgregados) {
+            btnAgregados.classList.add('ring-4', 'ring-red-600');
+        }
+        Swal.fire({
+            icon: 'error',
+            title: 'VALORES DE ITENS COMPLETOS NÃO ADICIONADOS À TABELA',
+            html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> HÁ VALORES NA <span class="text-red-600 font-bold">"CONTAGEM DINÂMICA DE ITENS COMPLETOS"</span> QUE NÃO FORAM ADICIONADOS À TABELA!<br><br>CLIQUE NO BOTÃO <span class="text-red-600 font-bold">"ADICIONAR ITENS COMPLETOS"</span> PARA PROSSEGUIR!',
+            confirmButtonColor: '#000000',
+            returnFocus: false,
+            didClose: () => {
+                if (btnAgregados) {
+                    irParaCampoAposAlerta(btnAgregados, btnAgregados);
+                    setTimeout(() => { btnAgregados.classList.remove('ring-4', 'ring-red-600'); }, 2500);
+                }
+            }
+        });
+        return;
+    }
+
+    const modoPreenchimento = document.getElementById('tipo-preenchimento').value;
+    if (!modoPreenchimento) {
+        mostrarAlertaAviso('MODO DE PREENCHIMENTO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> ESCOLHA O <span class="text-red-500 font-bold">MODO DE PREENCHIMENTO DA TABELA!</span>', document.getElementById('tipo-preenchimento'));
+        return;
+    }
+    
+    const campos = [
+        { id: 'info-natureza', msg: 'NATUREZA DA ATIVIDADE' },
+        { id: 'info-data', msg: 'DATA' },
+        { id: 'mat-agente1', msg: 'ID FUNCIONAL DO AGENTE' },
+        { id: 'mat-agente2', msg: 'ID FUNCIONAL DO AGENTE' },
+        { id: 'nome-rep', msg: 'NOME DO REPRESENTANTE DA EMPRESA / ESTABELECIMENTO' },
+        { id: 'cpf-rep', msg: 'CPF DO REPRESENTANTE DA EMPRESA / ESTABELECIMENTO' },
+        { id: 'tel-rep', msg: 'TELEFONE DO REPRESENTANTE DA EMPRESA / ESTABELECIMENTO' },
+        { id: 'e-mail-rep', msg: 'E-MAIL DO REPRESENTANTE OU DA EMPRESA / ESTABELECIMENTO' }
+    ];
+
+    const grupoFase = document.getElementById('grupo-fase-forca-tarefa');
+    if (grupoFase && grupoFase.style.display !== 'none') {
+        campos.push({ id: 'info-fase-forca-tarefa', msg: 'FASE DA FORÇA TAREFA' });
+    }
+    const grupoEstab = document.getElementById('grupo-estabelecimento');
+    if (grupoEstab && grupoEstab.style.display !== 'none') {
+        campos.push({ id: 'info-nome', msg: 'ESTABELECIMENTO' });
+    }
+    const grupoEndereco = document.getElementById('grupo-endereco');
+    if (grupoEndereco && grupoEndereco.style.display !== 'none') {
+        campos.push({ id: 'info-endereco', msg: 'ENDEREÇO' });
+    }
+
+    const grupoApoio = document.getElementById('grupo-apoio');
+    if (grupoApoio && grupoApoio.style.display !== 'none') {
+        campos.splice(1, 0, { id: 'info-apoio', msg: 'APOIO À' });
+    }
+
+    for (let i = 0; i < campos.length; i++) {
+        const campo = campos[i];
+        const elemento = document.getElementById(campo.id);
+        const containerPai = elemento?.closest('div');
+        const estaInvisivel = containerPai && (containerPai.style.display === 'none' || containerPai.offsetParent === null);
+
+        if (!estaInvisivel && (!elemento || !elemento.value.trim())) {
+            mostrarAlertaAviso('CAMPO OBRIGATÓRIO', `<span class="text-amber-500 font-bold">ATENÇÃO:</span> PREENCHA O CAMPO<br><b style="font-size:18px; color:#E53935;">"${campo.msg}"</b>!`, elemento);
+            return;
+        }
+    }
+
+    const lines = document.querySelectorAll('#table-body tr');
+    for (let i = 0; i < lines.length; i++) {
+        const nomePeca = lines[i].cells[1].innerText.trim().toUpperCase();
+        const inputEtq = lines[i].querySelector('.input-etiquetada');
+        const inputNEtq = lines[i].querySelector('.input-nao-etiquetada');
+
+        if ((modoPreenchimento === 'etiquetada' || modoPreenchimento === 'completa') && inputEtq && !inputEtq.disabled && inputEtq.value.trim() === '') {
+            mostrarAlertaAviso('TABELA INCOMPLETA', `<span class="text-amber-500 font-bold">ATENÇÃO:</span> A TABELA POSSUI CAMPO EM BRANCO!<br>PREENCHA O CAMPO <br><b style="font-size:18px; color:#E53935;">"${nomePeca}"</b>, NA COLUNA <b>"ETIQUETADA"</b>!`, inputEtq);
+            return;
+        }
+
+        if ((modoPreenchimento === 'nao-etiquetada' || modoPreenchimento === 'completa') && inputNEtq && !inputNEtq.disabled && inputNEtq.value.trim() === '') {
+            mostrarAlertaAviso('TABELA INCOMPLETA', `<span class="text-amber-500 font-bold">ATENÇÃO:</span> A TABELA POSSUI CAMPO EM BRANCO!<br>PREENCHA O CAMPO <br><b style="font-size:18px; color:#E53935;">"${nomePeca}"</b>, NA COLUNA <b>"NÃO ETIQUETADA"</b>!`, inputNEtq);
+            return;
+        }
+    }
+
+    if (isCanvasEmpty('sig-agente1')) { mostrarAlertaAviso('ASSINATURA FALTANDO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> A ASSINATURA DO <br><b style="font-size:18px; color:#E53935;">"AGENTE"</b> É OBRIGATÓRIA!', document.getElementById('sig-agente1')); return; }
+    if (isCanvasEmpty('sig-agente2')) { mostrarAlertaAviso('ASSINATURA FALTANDO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> A ASSINATURA DO <br><b style="font-size:18px; color:#E53935;">"AGENTE"</b> É OBRIGATÓRIA!', document.getElementById('sig-agente2')); return; }
+    if (isCanvasEmpty('sig-empresa')) { mostrarAlertaAviso('ASSINATURA FALTANDO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> A ASSINATURA DO <br><b style="font-size:18px; color:#e11d48;">"REPRESENTANTE DA EMPRESA / ESTABELECIMENTO"</b> É OBRIGATÓRIA!', document.getElementById('sig-empresa')); return; }
+
+    if (typeof acaoSucesso === 'function') {
+        acaoSucesso();
+    }
+}
+
+function compartilharPDFWhatsApp() {
+    validarFormulario(() => {
+        const nome = document.getElementById('info-nome').value.toUpperCase();
+        const dataBR = document.getElementById('info-data').value.split('-').reverse().join('/');
+        const natureza = document.getElementById('info-natureza').value.toUpperCase();
+        const apoio = document.getElementById('info-apoio').value.toUpperCase();
+        const fase = document.getElementById('info-fase-forca-tarefa').value.toUpperCase();
+        const endereco = document.getElementById('info-endereco').value.toUpperCase();
+        const telRep = document.getElementById('tel-rep').value;
+        const emailRep = document.getElementById('e-mail-rep').value.toUpperCase();
+        const modo = document.getElementById('tipo-preenchimento').value;
+
+        const etq = parseInt(document.getElementById('total-etiquetadas').innerText) || 0;
+        const nEtq = parseInt(document.getElementById('total-nao-etiquetadas').innerText) || 0;
+        const fis = document.getElementById('total-est-fisico').innerText;
+
+        const statusEmpresa = (etq > nEtq) 
+            ? "EMPRESA EM EVOLUÇÃO DE PEÇAS CADASTRADAS" 
+            : "EMPRESA COM DÉFICIT DE PEÇAS CADASTRADAS";
+
+        let mensagem = `*ITENS DE RASTREABILIDADE DE CAMINHÃO/ÔNIBUS*\n\n`;
+        mensagem += `🧐 *FISCALIZAÇÃO:* ${natureza}\n`;
+        if (document.getElementById('grupo-apoio').style.display !== 'none') {
+            mensagem += `🤝 *APOIO À:* ${apoio}\n`;
+        }
+        if (document.getElementById('grupo-fase-forca-tarefa').style.display !== 'none') {
+            mensagem += `🪖 *FASE DA FORÇA TAREFA:* ${fase}\n`;
+        }
+        if (document.getElementById('grupo-estabelecimento').style.display !== 'none') {
+            mensagem += `🏢 *EMPRESSA / ESTABELECIMENTO:* ${nome}\n`;
+        }
+        if (document.getElementById('grupo-endereco').style.display !== 'none') {
+            mensagem += `📍 *ENDEREÇO:* ${endereco}\n`;
+        }
+        mensagem += `📅 *DATA:* ${dataBR}\n\n`;
+
+        if (modo === 'nao-etiquetada') {
+            mensagem += `🚫 *PEÇAS NÃO ETIQUETADAS:* ${nEtq}\n\n`;
+        } else if (modo === 'etiquetada') {
+            mensagem += `🏷️ *PEÇAS ETIQUETADAS:* ${etq}\n\n`;
+        } else {
+            mensagem += `🏷️ *PEÇAS ETIQUETADAS:* ${etq}\n`;
+            mensagem += `🚫 *PEÇAS NÃO ETIQUETADAS:* ${nEtq}\n`;
+            mensagem += `📦 *ESTOQUE FÍSICO:* ${fis}\n`;
+            mensagem += `📊 *STATUS:* ${statusEmpresa}\n\n`;
+        }
+
+        mensagem += `📞 *TELEFONE DO REPRESENTANTE DA EMPRESA / ESTABELECIMENTO:* ${telRep}\n`;
+        mensagem += `📧 *E-MAIL DO REPRESENTANTE DA EMPRESA / ESTABELECIMENTO:* ${emailRep}`;
+
+        window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(mensagem)}`, '_blank');
+    });
+}
+
+function salvarPDFHistorico(pdfObj) {
+    let historico = JSON.parse(Armazem.ls.getItem('historico_pdfs_caminhao_onibus')) || [];
+    historico.unshift(pdfObj); 
+    
+    let salvou = false;
+    while (!salvou && historico.length > 0) {
+        try {
+            Armazem.ls.setItem('historico_pdfs_caminhao_onibus', JSON.stringify(historico));
+            salvou = true;
+        } catch(e) {
+            if (historico.length > 1) {
+                historico.pop(); 
+            } else {
+                console.error("Erro: PDF atual excede capacidade máxima permitida de memória.");
+                break;
+            }
+        }
+    }
+    renderizarGridPDFs();
+}
+
+function renderizarGridPDFs() {
+    const container = document.getElementById('grid-pdfs-container');
+    if (!container) return;
+
+    const termoBusca = (document.getElementById('busca-pdf')?.value || '').toLowerCase().trim();
+    let historico = JSON.parse(Armazem.ls.getItem('historico_pdfs_caminhao_onibus')) || [];
+
+    historico.sort((a, b) => b.timestamp - a.timestamp);
+
+    if (termoBusca) {
+        historico = historico.filter(item => 
+            (item.nome && item.nome.toLowerCase().includes(termoBusca)) ||
+            (item.empresa && item.empresa.toLowerCase().includes(termoBusca)) ||
+            (item.natureza && item.natureza.toLowerCase().includes(termoBusca)) ||
+            (item.fase && item.fase.toLowerCase().includes(termoBusca)) ||
+            (item.dataFiscalizacao && item.dataFiscalizacao.toLowerCase().includes(termoBusca)) ||
+            (item.dataGeracao && item.dataGeracao.toLowerCase().includes(termoBusca))
+        );
+    }
+
+    if (historico.length === 0) {
+        container.innerHTML = `<div class="pdf-empty-state">NENHUM PDF NO HISTÓRICO</div>`;
+        return;
+    }
+
+    container.innerHTML = historico.map(item => `
+        <div class="pdf-card">
+          <div class="pdf-card-info" onclick="abrirPDF('${item.id}')" title="CLIQUE AQUI PARA ABRIR O PDF">
+            <span class="pdf-card-icon">📄</span>
+            <div class="pdf-card-text">
+              <div class="pdf-card-title">${item.natureza || ''}${item.fase ? ' - FASE ' + item.fase : ''} - ${item.empresa ? item.empresa + ' - ' : ''}${item.dataFiscalizacao || (item.dataGeracao || '').split(',')[0]}</div>
+              <div class="pdf-card-meta">GERADO EM: ${item.dataGeracao}</div>
+            </div>
+          </div>
+          <div class="pdf-card-actions">
+            <button class="btn-icon-pdf" onclick="abrirPDF('${item.id}')" title="ABRIR / VISUALIZAR PDF">👁️</button>
+            <button class="btn-icon-pdf" onclick="baixarPDFHistorico('${item.id}')" title="BAIXAR PDF">⬇️</button>
+            <button class="btn-icon-pdf" onclick="excluirPDF('${item.id}')" title="EXCLUIR PDF">🗑️</button>
+          </div>
+        </div>
+    `).join('');
+}
+
+async function abrirPDF(id) {
+    const historico = JSON.parse(Armazem.ls.getItem('historico_pdfs_caminhao_onibus')) || [];
+    const pdfObj = historico.find(item => String(item.id) === String(id));
+    await Armazem.completar(pdfObj);
+    if (pdfObj && pdfObj.dataUri) {
+        try {
+            const byteString = atob(pdfObj.dataUri.split(',')[1]);
+            const mimeString = pdfObj.dataUri.split(',')[0].split(':')[1].split(';')[0];
+            const ab = new ArrayBuffer(byteString.length);
+            const ia = new Uint8Array(ab);
+            for (let i = 0; i < byteString.length; i++) {
+                ia[i] = byteString.charCodeAt(i);
+            }
+            const blob = new Blob([ab], { type: mimeString || 'application/pdf' });
+            const blobUrl = URL.createObjectURL(blob);
+            
+            const win = window.open(blobUrl, '_blank');
+            if (!win) {
+                window.location.href = blobUrl;
+            }
+        } catch (e) {
+            console.error("Erro ao abrir PDF diretamente:", e);
+            const win = window.open();
+            if (win) {
+                win.document.write(`<iframe src="${pdfObj.dataUri}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`);
+            } else {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'BLOQUEADOR DE POP-UP DETECTADO',
+                    html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> PERMITA POP-UPS PARA ABRIR O PDF SALVO.',
+                    confirmButtonColor: '#000000'
+                });
+            }
+        }
+    }
+}
+
+function avisarDownloadEAtualizar() {
+    Swal.fire({
+        icon: 'success',
+        title: 'DOWNLOAD INICIADO!',
+        html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> O PDF ESTÁ SENDO BAIXADO. A PÁGINA SERÁ ATUALIZADA.',
+        timer: 1500,
+        timerProgressBar: true,
+        showConfirmButton: false,
+        allowOutsideClick: false,
+        allowEscapeKey: false
+    }).then(() => { window.location.reload(); });
+}
+
+async function baixarPDFHistorico(id) {
+    const historico = JSON.parse(Armazem.ls.getItem('historico_pdfs_caminhao_onibus')) || [];
+    const pdfObj = historico.find(item => String(item.id) === String(id));
+    await Armazem.completar(pdfObj);
+    if (!pdfObj || !pdfObj.dataUri) return;
+
+    const byteString = atob(pdfObj.dataUri.split(',')[1]);
+    const mimeString = pdfObj.dataUri.split(',')[0].split(':')[1].split(';')[0];
+    const ab = new ArrayBuffer(byteString.length);
+    const ia = new Uint8Array(ab);
+    for (let i = 0; i < byteString.length; i++) {
+        ia[i] = byteString.charCodeAt(i);
+    }
+    const blob = new Blob([ab], { type: mimeString });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = pdfObj.nome || 'rastreabilidade-caminhao-onibus.pdf';
+    document.body.appendChild(link);
+    link.click();
+    avisarDownloadEAtualizar();
+    document.body.removeChild(link);
+}
+
+function excluirPDF(id) {
+    Swal.fire({
+        title: 'EXCLUIR PDF?',
+        html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> ESTA AÇÃO <span class="text-red-500 font-bold">NÃO PODERÁ SER DESFEITA </span>.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#000000',
+        confirmButtonText: 'EXCLUIR',
+        cancelButtonText: 'CANCELAR'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            let historico = JSON.parse(Armazem.ls.getItem('historico_pdfs_caminhao_onibus')) || [];
+            historico = historico.filter(item => String(item.id) !== String(id));
+            Armazem.ls.setItem('historico_pdfs_caminhao_onibus', JSON.stringify(historico));
+            renderizarGridPDFs();
+            Swal.fire({
+                icon: 'success',
+                title: 'EXCLUÍDO!',
+                html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> O PDF FOI EXCLUÍDO DO HISTÓRICO.',
+                timer: 1500,
+                showConfirmButton: false
+            });
+        }
+    });
+}
+
+function carregarImagemComoDataURL(url) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+            try {
+                const canvasTemp = document.createElement('canvas');
+                const MAX_W = 150;
+                let w = img.naturalWidth;
+                let h = img.naturalHeight;
+                if (w > MAX_W) {
+                    h = Math.round((h * MAX_W) / w);
+                    w = MAX_W;
+                }
+                canvasTemp.width = w;
+                canvasTemp.height = h;
+                canvasTemp.getContext('2d').drawImage(img, 0, 0, w, h);
+                resolve(canvasTemp.toDataURL('image/png'));
+            } catch (e) { reject(e); }
+        };
+        img.onerror = reject;
+        img.src = url;
+    });
+}
+
+function gerarPDFPersonalizado() {
+    validarFormulario(async () => {
+        const nomeEstab = document.getElementById('info-nome').value.trim() || "";
+        const nomeNatu = document.getElementById('info-natureza').value.trim() || "";
+        const nomeApoio = document.getElementById('info-apoio').value.trim() || "";
+        const nomeFase = document.getElementById('info-fase-forca-tarefa').value.trim() || "";
+        const nomeEndereco = document.getElementById('info-endereco').value.trim() || "";
+        const exibeFase = document.getElementById('grupo-fase-forca-tarefa').style.display !== 'none';
+        const exibeEstab = document.getElementById('grupo-estabelecimento').style.display !== 'none';
+        const exibeEndereco = document.getElementById('grupo-endereco').style.display !== 'none';
+        const exibeApoio = document.getElementById('grupo-apoio').style.display !== 'none';
+        const dataInput = document.getElementById('info-data').value;
+        const dataFormatada = dataInput ? dataInput.split('-').reverse().join('/') : "";
+        const dataFileName = dataInput ? dataInput.split('-').reverse().join('-') : "";
+        
+        const isForcaTarefa = normalizarTexto(nomeNatu).includes('FORCA TAREFA');
+        const faseFormatada = (isForcaTarefa && nomeFase) ? ` - FASE ${nomeFase.toUpperCase()}` : '';
+        const nomeArquivo = `ITENS DE RASTREABILIDADE DE CAMINHÃO / ÔNIBUS - ${nomeNatu.toUpperCase()}${faseFormatada} - ${nomeEstab ? nomeEstab.toUpperCase() + ' - ' : ''}${dataFileName}.pdf`;
+
+        Swal.fire({
+            title: 'GERANDO PDF...',
+            html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> AGUARDE A CRIAÇÃO E SALVAMENTO DO ARQUIVO.',
+            allowOutsideClick: false,
+            didOpen: () => { Swal.showLoading(); }
+        });
+
+        try {
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const pageWidth = pdf.internal.pageSize.getWidth();
+            let y = 10;
+
+            try {
+                const logoDataUrl = await carregarImagemComoDataURL('https://upload.wikimedia.org/wikipedia/commons/e/e2/Ins%C3%ADgnia_bras%C3%A3o_estilizado_governos_Wilson_Witzel_e_Cl%C3%A1udio_Castro_RJ.png');
+                pdf.addImage(logoDataUrl, 'PNG', pageWidth / 2 - 12, y, 24, 24);
+                y += 32; 
+            } catch(e) {
+                y += 10;
+            }
+
+            pdf.setFont('helvetica', 'bold');
+            pdf.setFontSize(12);
+            pdf.setTextColor(0, 0, 0);
+            pdf.text('GOVERNO DO ESTADO DO RIO DE JANEIRO', pageWidth / 2, y, { align: 'center' });
+            y += 5.5;
+            pdf.setFontSize(10);
+            pdf.text('DEPARTAMENTO DE TRÂNSITO DO ESTADO DO RIO DE JANEIRO - DETRAN.RJ', pageWidth / 2, y, { align: 'center' });
+            y += 5.5;
+            pdf.setFont('helvetica', 'normal');
+            pdf.setFontSize(9);
+            pdf.text('DIRETORIA GERAL DAS ATIVIDADES DE DESMONTAGEM', pageWidth / 2, y, { align: 'center' });
+            y += 5.5;
+            pdf.setFont('helvetica', 'normal');
+            pdf.setFontSize(9);
+            pdf.text('DIVISÃO DE FISCALIZAÇÃO', pageWidth / 2, y, { align: 'center' });
+            y += 10;
+
+            const drawInfoBox = (x, yPos, w, label, value) => {
+                pdf.setFillColor(249, 250, 251); 
+                pdf.setDrawColor(220, 220, 220);
+                pdf.roundedRect(x, yPos, w, 11, 1.5, 1.5, 'FD');
+                
+                pdf.setFontSize(7);
+                pdf.setTextColor(100, 100, 100); 
+                pdf.setFont('helvetica', 'bold');
+                pdf.text(label, x + 3, yPos + 4);
+                
+                pdf.setFontSize(9);
+                pdf.setTextColor(0, 0, 0);
+                pdf.setFont('helvetica', 'normal');
+                pdf.text(value, x + 3, yPos + 9);
+            };
+
+            drawInfoBox(14, y, 130, 'NATUREZA DA ATIVIDADE:', nomeNatu.toUpperCase());
+            drawInfoBox(148, y, 48, 'DATA:', dataFormatada);
+            y += 13;
+            if (exibeApoio) {
+                drawInfoBox(14, y, 182, 'APOIO À:', nomeApoio.toUpperCase());
+                y += 13;
+            }
+            if (exibeFase) {
+                drawInfoBox(14, y, 182, 'FASE DA FORÇA TAREFA:', nomeFase.toUpperCase());
+                y += 13;
+            }
+            if (exibeEstab) {
+                drawInfoBox(14, y, 182, 'ESTABELECIMENTO:', nomeEstab.toUpperCase());
+                y += 13;
+            }
+            if (exibeEndereco) {
+                drawInfoBox(14, y, 182, 'ENDEREÇO:', nomeEndereco.toUpperCase());
+                y += 13;
+            }
+            y += 7;
+
+            pdf.setFont('helvetica', 'bold');
+            pdf.setFontSize(11);
+            pdf.setTextColor(0, 0, 0);
+            pdf.text('ITENS DE RASTREABILIDADE OBRIGATÓRIA - CAMINHÃO/ÔNIBUS', pageWidth / 2, y, { align: 'center' });
+            y += 6;
+
+            const tableRows = [];
+            document.querySelectorAll('#table-body tr').forEach(tr => {
+                tableRows.push([
+                    tr.cells[0].innerText,
+                    tr.cells[1].innerText.trim().toUpperCase(),
+                    tr.querySelector('.input-etiquetada').value || '',
+                    tr.querySelector('.input-nao-etiquetada').value || '',
+                    tr.querySelector('.input-est-fisico').value || ''
+                ]);
+            });
+
+            const totEtq = document.getElementById('total-etiquetadas').innerText;
+            const totNetq = document.getElementById('total-nao-etiquetadas').innerText;
+            const totFis = document.getElementById('total-est-fisico').innerText;
+
+            pdf.autoTable({
+                startY: y,
+                showFoot: 'lastPage',
+                head: [['N°', 'PEÇAS', 'ETIQUETADAS', 'NÃO ETIQUETADAS', 'ESTOQUE FÍSICO']],
+                body: tableRows,
+                foot: [['', 'TOTAL DE PEÇAS RASTREÁVEIS', totEtq, totNetq, totFis]],
+                theme: 'grid',
+                headStyles: { fillColor: [31, 41, 55], textColor: 255, halign: 'center', fontSize: 7.5, cellPadding: 1.5 },
+                bodyStyles: { textColor: 0, fontSize: 8, halign: 'center', valign: 'middle', cellPadding: 1.5 },
+                footStyles: { fillColor: [230, 230, 230], textColor: 0, fontStyle: 'bold', halign: 'center', fontSize: 8.5, cellPadding: 2 },
+                columnStyles: {
+                    0: { cellWidth: 12 },
+                    1: { cellWidth: 'auto', halign: 'left', fontStyle: 'bold', textColor: [50, 50, 50] },
+                    2: { cellWidth: 32 },
+                    3: { cellWidth: 35 },
+                    4: { cellWidth: 32 }
+                },
+                styles: { lineWidth: 0.1, lineColor: [200, 200, 200] },
+                didParseCell: function(data) {
+                    if (data.section === 'foot' && data.column.index === 1) {
+                        data.cell.styles.halign = 'left';
+                    }
+                }
+            });
+
+            pdf.addPage();
+            let sigY = 20;
+
+            const drawSig = (x, yPos, w, title, canvasId, fields) => {
+                const boxHeight = 48 + (fields.length * 10);
+                
+                pdf.setFillColor(249, 250, 251);
+                pdf.setDrawColor(220, 220, 220);
+                pdf.roundedRect(x, yPos, w, boxHeight, 2, 2, 'FD');
+
+                pdf.setFontSize(7);
+                pdf.setTextColor(100, 100, 100);
+                pdf.setFont('helvetica', 'bold');
+                pdf.text('ASSINATURA DIGITAL:', x + 5, yPos + 6);
+                
+                pdf.setDrawColor(200, 200, 200);
+                pdf.rect(x + 5, yPos + 8, w - 10, 25);
+                
+                const canvas = document.getElementById(canvasId);
+                if (canvas && !isCanvasEmpty(canvasId)) {
+                    const tempC = document.createElement('canvas');
+                    tempC.width = canvas.offsetWidth;
+                    tempC.height = canvas.offsetHeight;
+                    const tCtx = tempC.getContext('2d');
+                    tCtx.fillStyle = '#ffffff';
+                    tCtx.fillRect(0, 0, tempC.width, tempC.height);
+                    tCtx.drawImage(canvas, 0, 0, tempC.width, tempC.height);
+                    pdf.addImage(tempC.toDataURL('image/jpeg', 0.6), 'JPEG', x + 6, yPos + 9, w - 12, 23);
+                }
+
+                let curY = yPos + 38;
+                fields.forEach(f => {
+                    pdf.setFontSize(7);
+                    pdf.setTextColor(100, 100, 100);
+                    pdf.setFont('helvetica', 'bold');
+                    pdf.text(f.label, x + 5, curY);
+                    
+                    pdf.setFontSize(8.5);
+                    pdf.setTextColor(0, 0, 0);
+                    pdf.setFont('helvetica', 'normal');
+                    pdf.text(f.value || '', x + 5, curY + 4);
+                    
+                    pdf.setDrawColor(220, 220, 220);
+                    pdf.line(x + 5, curY + 5, x + w - 5, curY + 5);
+                    curY += 10;
+                });
+
+                pdf.setFontSize(8);
+                pdf.setTextColor(0, 0, 0);
+                pdf.setFont('helvetica', 'bold');
+                pdf.text(title, x + w/2, curY + 4, { align: 'center' });
+                
+                return boxHeight;
+            };
+
+            const sigWidth = 88; 
+            const repFields = [
+                {label: 'NOME:', value: document.getElementById('nome-rep').value.toUpperCase()},
+                {label: 'CPF:', value: document.getElementById('cpf-rep').value},
+                {label: 'TEL.:', value: document.getElementById('tel-rep').value},
+                {label: 'E-MAIL:', value: document.getElementById('e-mail-rep').value.toUpperCase()}
+            ];
+
+            let boxHA = drawSig(14, sigY, sigWidth, 'AGENTE DO DETRAN.RJ', 'sig-agente1', [{label: 'ID FUNCIONAL:', value: document.getElementById('mat-agente1').value}]);
+            drawSig(108, sigY, sigWidth, 'AGENTE DO DETRAN.RJ', 'sig-agente2', [{label: 'ID FUNCIONAL:', value: document.getElementById('mat-agente2').value}]);
+
+            sigY += boxHA + 8;
+
+            drawSig(61, sigY, sigWidth, 'REPRESENTANTE DA EMPRESA / ESTABELECIMENTO', 'sig-empresa', repFields);
+
+            const pdfDataUri = pdf.output('datauristring');
+            const pdfBlob = pdf.output('blob');
+
+            salvarPDFHistorico({
+                id: Date.now().toString(),
+                nome: nomeArquivo,
+                empresa: nomeEstab.toUpperCase(),
+                fase: isForcaTarefa ? nomeFase.toUpperCase() : '',
+                endereco: nomeEndereco.toUpperCase(),
+                natureza: nomeNatu.toUpperCase(),
+                apoio: exibeApoio ? nomeApoio.toUpperCase() : '',
+                dataFiscalizacao: dataFormatada,
+                dataGeracao: new Date().toLocaleString('pt-BR'),
+                timestamp: Date.now(),
+                dataUri: pdfDataUri
+            });
+
+            // pdf.save(nomeArquivo);
+            const foiCompartilhado = await compartilharPDFGeradoWhatsApp(pdfBlob, nomeArquivo);
+
+            Swal.close();
+
+if (foiCompartilhado) {
+    Swal.fire({
+        icon: 'success',
+        title: 'PDF GERADO E COMPARTILHADO!',
+        html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> O ARQUIVO FOI ADICIONADO AO HISTÓRICO DA PÁGINA.',
+        confirmButtonColor: '#000000'
+    }).then(() => {
+        // limparTabelaDireto();
+        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    });
+} else {
+    Swal.fire({
+        icon: 'success',
+        title: 'PDF GERADO COM SUCESSO!',
+        html: `<span class="text-amber-500 font-bold">ATENÇÃO:</span> O ARQUIVO FOI ADICIONADO AO HISTÓRICO DA PÁGINA.<br><br>
+               <b>PARA BAIXAR:</b> UTILIZE O BOTÃO "⬇️" NO HISTÓRICO DE PDFS ABAIXO.`,
+        confirmButtonColor: '#000000'
+    }).then(() => {
+        // limparTabelaDireto();
+        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    });
+}
+
+function limparTabelaDireto() {
+    Armazem.ls.removeItem('rascunho_moto');
+    dadosAgregadosPorModo = {
+        "etiquetada": { "motor-completo-etq": "" },
+        "nao-etiquetada": { "motor-completo-netq": "" },
+        "completa": { "motor-completo-etq": "", "motor-completo-netq": "" }
+    };
+    document.getElementById('info-natureza').value = "";
+    document.getElementById('tipo-preenchimento').value = "";
+    document.getElementById('container-agregados').classList.add('hidden');
+    document.getElementById('btn-processar-agregados').classList.add('hidden');
+    document.getElementById('agregados-grid').innerHTML = '';
+    document.querySelectorAll('input').forEach(input => {
+        input.value = ''; 
+        input.classList.remove('preenchido');
+    });
+    document.querySelectorAll('canvas').forEach(canvas => {
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+    });
+    document.getElementById('total-etiquetadas').innerText = '0';
+    document.getElementById('total-nao-etiquetadas').innerText = '0';
+    document.getElementById('total-est-fisico').innerText = '0';
+    atualizarColunas();
+}
+        } catch (error) {
+            console.error('Erro ao gerar PDF:', error);
+            Swal.fire({
+                icon: 'error',
+                title: 'ERRO AO GERAR PDF',
+                html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> OCORREU UM <span class="text-red-500 font-bold">PROBLEMA AO GERAR O PDF</span>.',
+                confirmButtonColor: '#000000'
+            });
+        }
+    });
+}
+
+async function compartilharPDFGeradoWhatsApp(blob, nomeArquivo) {
+    if (navigator.share && navigator.canShare) {
+        const arquivo = new File([blob], nomeArquivo, { type: 'application/pdf' });
+        try {
+            if (navigator.canShare({ files: [arquivo] })) {
+                await navigator.share({
+                    files: [arquivo],
+                    title: nomeArquivo,
+                    text: 'PDF DE ITENS DE RASTREABILIDADE'
+                });
+                return true;
+            }
+        } catch (error) {
+            console.warn('Compartilhamento abortado ou indisponível:', error);
+        }
+    }
+    return false;
+}
+
+function salvarProgresso() {
+    if (window.isClearing) return;
+    const rascunho = {
+        nome: document.getElementById('info-nome').value,
+        fase: document.getElementById('info-fase-forca-tarefa').value,
+        endereco: document.getElementById('info-endereco').value,
+        natureza: document.getElementById('info-natureza').value,
+        apoio: document.getElementById('info-apoio').value,
+        data: document.getElementById('info-data').value,
+        mat1: document.getElementById('mat-agente1').value,
+        mat2: document.getElementById('mat-agente2').value,
+        nomeRep: document.getElementById('nome-rep').value,
+        cpfRep: document.getElementById('cpf-rep').value,
+        telRep: document.getElementById('tel-rep').value,
+        emailRep: document.getElementById('e-mail-rep').value,
+        tipoPreenchimento: document.getElementById('tipo-preenchimento').value,
+        dadosAgregadosPorModo: dadosAgregadosPorModo,
+        tabela: Array.from(document.querySelectorAll('#table-body tr')).map(r => ({
+            etq: r.querySelector('.input-etiquetada').value,
+            nEtq: r.querySelector('.input-nao-etiquetada').value
+        })),
+        sig1: document.getElementById('sig-agente1').toDataURL(),
+        sig2: document.getElementById('sig-agente2').toDataURL(),
+        sig3: document.getElementById('sig-empresa').toDataURL()
+    };
+    try {
+        Armazem.ls.setItem('rascunho_rastreabilidade_caminhao', JSON.stringify(rascunho));
+    } catch (_) {}
+}
+
+function limparTabela() {
+    Swal.fire({
+        title: 'TEM CERTEZA?',
+        html: "<span class='text-amber-500 font-bold'>ATENÇÃO:  </span> ISTO IRÁ <span class='text-red-500 font-bold'> 'APAGAR' TODOS OS CAMPOS PREENCHIDOS NA PÁGINA </span>!",
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#000000',
+        confirmButtonText: 'OK',
+        cancelButtonText: 'CANCELAR',
+        didClose: () => {
+            if (window.foiConfirmadoLimpar) {
+                window.foiConfirmadoLimpar = false;
+                setTimeout(() => { window.scrollTo({ top: 0, behavior: 'smooth' }); }, 100);
+            }
+        }
+    }).then((result) => {
+        if (result.isConfirmed) {
+            window.isClearing = true;
+            window.foiConfirmadoLimpar = true;
+            Armazem.ls.removeItem('rascunho_rastreabilidade_caminhao');
+            
+            dadosAgregadosPorModo = {
+                "etiquetada": { "kit-code-etq": "", "motor-completo-etq": "", "radiador-completo-etq": "" },
+                "nao-etiquetada": { "kit-code-netq": "", "motor-completo-netq": "", "radiador-completo-netq": "" },
+                "completa": { 
+                    "kit-code-etq": "", "motor-completo-etq": "", "radiador-completo-etq": "",
+                    "kit-code-netq": "", "motor-completo-netq": "", "radiador-completo-netq": "" 
+                }
+            };
+
+            document.getElementById('info-natureza').value = "";
+            document.getElementById('tipo-preenchimento').value = "";
+            document.getElementById('container-agregados').classList.add('hidden');
+            document.getElementById('btn-processar-agregados').classList.add('hidden');
+            document.getElementById('agregados-grid').innerHTML = '';
+
+            document.querySelectorAll('input').forEach(input => {
+                input.value = ''; 
+                input.classList.remove('preenchido');
+            });
+
+            document.querySelectorAll('canvas').forEach(canvas => {
+                const ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            });
+
+            document.getElementById('total-etiquetadas').innerText = '0';
+            document.getElementById('total-nao-etiquetadas').innerText = '0';
+            document.getElementById('total-est-fisico').innerText = '0';
+            
+            atualizarColunas();
+            window.isClearing = false;
+        }
+    });
+}
+
+function aplicarMascaraCPF(i) { i.value = i.value.replace(/\D/g, "").replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d{1,2})$/, "$1-$2"); }
+function aplicarMascaraMatricula(i) { i.value = i.value.replace(/\D/g, "").replace(/(\d{7})(\d{1})$/, "$1-$2"); }
+function aplicarMascaraTelefone(i) {
+    i.value = i.value.replace(/\D/g, "")
+                     .replace(/^(\d{2})(\d)/g, "($1) $2")
+                     .replace(/(\d{5})(\d)/, "$1-$2")
+                     .substring(0, 15);
+}
+
+const canvases = ['sig-agente1', 'sig-agente2', 'sig-empresa'];
+
+canvases.forEach(id => {
+    const canvas = document.getElementById(id);
+    const ctx = canvas.getContext('2d');
+    
+    ctx.strokeStyle = '#1e293b'; 
+    ctx.lineWidth = 2.5; 
+    ctx.lineCap = 'round';
+    
+    let draw = false;
+
+    const getPos = (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        
+        const xCanvas = clientX - rect.left;
+        const yCanvas = clientY - rect.top;
+        
+        return { 
+            x: xCanvas * (canvas.width / canvas.offsetWidth), 
+            y: yCanvas * (canvas.height / canvas.offsetHeight) 
+        };
+    };
+
+    const start = (e) => {
+        draw = true;
+        const p = getPos(e);
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+    };
+
+    const move = (e) => {
+        if (!draw) return;
+        if (e.cancelable) e.preventDefault(); 
+        const p = getPos(e);
+        ctx.lineTo(p.x, p.y);
+        ctx.stroke();
+    };
+
+    const end = () => draw = false;
+
+    canvas.addEventListener('mousedown', start);
+    canvas.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', end);
+
+    canvas.addEventListener('touchstart', start, {passive: false});
+    canvas.addEventListener('touchmove', move, {passive: false});
+    canvas.addEventListener('touchend', end);
+});
+
+function ajustarResolucaoCanvas(id) {
+    const canvas = document.getElementById(id);
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    
+    let tempCanvas = document.createElement('canvas');
+    tempCanvas.width = canvas.width;
+    tempCanvas.height = canvas.height;
+    let tempCtx = tempCanvas.getContext('2d');
+    tempCtx.drawImage(canvas, 0, 0);
+
+    canvas.width = canvas.offsetWidth * dpr;
+    canvas.height = canvas.offsetHeight * dpr;
+    
+    ctx.strokeStyle = '#1e293b';
+    ctx.lineWidth = 2.5 * dpr; 
+    ctx.lineCap = 'round';
+
+    ctx.drawImage(tempCanvas, 0, 0, tempCanvas.width, tempCanvas.height, 0, 0, canvas.width, canvas.height);
+}
+
+window.addEventListener('resize', () => {
+    canvases.forEach(id => { ajustarResolucaoCanvas(id); });
+});
+
+window.onload = () => {
+    canvases.forEach(id => { ajustarResolucaoCanvas(id); });
+    setTimeout(() => {
+        canvases.forEach(id => { ajustarResolucaoCanvas(id); });
+    }, 150);
+    canvases.forEach(id => { ajustarResolucaoCanvas(id); });
+
+    const rascunho = JSON.parse(Armazem.ls.getItem('rascunho_rastreabilidade_caminhao'));
+    if (!rascunho) return;
+
+    document.getElementById('info-nome').value = rascunho.nome || "";
+    document.getElementById('info-fase-forca-tarefa').value = rascunho.fase || "";
+    document.getElementById('info-endereco').value = rascunho.endereco || "";
+    document.getElementById('info-data').value = rascunho.data || "";
+    document.getElementById('info-natureza').value = rascunho.natureza || "";
+    document.getElementById('info-apoio').value = rascunho.apoio || "";
+    atualizarCamposNatureza();
+    document.getElementById('mat-agente1').value = rascunho.mat1 || "";
+    document.getElementById('mat-agente2').value = rascunho.mat2 || "";
+    document.getElementById('nome-rep').value = rascunho.nomeRep || "";
+    document.getElementById('cpf-rep').value = rascunho.cpfRep || "";
+    document.getElementById('tel-rep').value = rascunho.telRep || ""; 
+    document.getElementById('e-mail-rep').value = rascunho.emailRep || ""; 
+    
+    if(rascunho.tipoPreenchimento){
+        document.getElementById('tipo-preenchimento').value = rascunho.tipoPreenchimento;
+    }
+    if(rascunho.dadosAgregadosPorModo){
+        dadosAgregadosPorModo = rascunho.dadosAgregadosPorModo;
+    }
+
+    if (rascunho.tabela) {
+        const iEtq = document.querySelectorAll('.input-etiquetada');
+        const iNEtq = document.querySelectorAll('.input-nao-etiquetada');
+        rascunho.tabela.forEach((val, i) => {
+            if (iEtq[i]) iEtq[i].value = val.etq;
+            if (iNEtq[i]) iNEtq[i].value = val.nEtq;
+        });
+    }
+
+    atualizarColunas();
+
+    setTimeout(() => {
+        if (rascunho.sig1) restaurarAssinatura('sig-agente1', rascunho.sig1);
+        if (rascunho.sig2) restaurarAssinatura('sig-agente2', rascunho.sig2);
+        if (rascunho.sig3) restaurarAssinatura('sig-empresa', rascunho.sig3);
+    }, 200);
+};
+
+function restaurarAssinatura(canvasId, dataUrl) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+    img.onload = () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    };
+    img.src = dataUrl;
+}    
+
+document.addEventListener('input', (e) => {
+    if (e.target.tagName === 'INPUT' && e.target.id !== 'busca-pdf') {
+        clearTimeout(window.saveTimeout);
+        window.saveTimeout = setTimeout(() => { salvarProgresso(); }, 800); 
+    }
+});
+
+document.querySelectorAll('canvas').forEach(canvas => {
+    canvas.addEventListener('touchend', () => { setTimeout(salvarProgresso, 500); });
+    window.addEventListener('mouseup', () => { setTimeout(salvarProgresso, 500); });
+});
+</script>
+<script>
+/* Campos numéricos: texto + teclado numérico (evita o navegador apagar o valor mascarado) */
+document.addEventListener('input', function (e) {
+    var t = e.target;
+    if (t && t.hasAttribute && t.hasAttribute('data-so-numeros')) {
+        var v = t.value.replace(/\D/g, '');
+        if (v !== t.value) t.value = v;
+    }
+});
+</script>
+<script>
+(function () {
+    if (window.Armazem) return;
+    var d = document.createElement('div');
+    d.setAttribute('style', 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:99999;background:#fff;color:#b91c1c;font:700 16px sans-serif;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;text-transform:uppercase');
+    d.textContent = 'ARQUIVO "armazem.js" NÃO ENCONTRADO. COPIE armazem.js, nuvem.js E firebase-config.js PARA A MESMA PASTA DESTA PÁGINA.';
+    document.body.appendChild(d);
+})();
+</script>
+</body>
+</html>

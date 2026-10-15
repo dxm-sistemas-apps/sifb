@@ -1,0 +1,2732 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CONTROLE DE CARGAS</title>
+  <script src="firebase-config.js"></script>
+  <script src="armazem.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <!-- Alertas SweetAlert2 sempre centralizados e totalmente visíveis na parte visível da tela -->
+  <script>
+  (function () {
+      if (typeof Swal === 'undefined') return;
+
+      // Mantém o contêiner do alerta exatamente sobre a área VISÍVEL (considera zoom, barra do navegador e teclado)
+      function ajustarAreaVisivel() {
+          const c = document.querySelector('.swal2-container');
+          const vv = window.visualViewport;
+          if (!c || !vv) return;
+          c.style.setProperty('top', vv.offsetTop + 'px', 'important');
+          c.style.setProperty('left', vv.offsetLeft + 'px', 'important');
+          c.style.setProperty('width', vv.width + 'px', 'important');
+          c.style.setProperty('height', vv.height + 'px', 'important');
+          c.style.setProperty('right', 'auto', 'important');
+          c.style.setProperty('bottom', 'auto', 'important');
+      }
+      function ativarAreaVisivel() {
+          ajustarAreaVisivel();
+          if (window.visualViewport) {
+              window.visualViewport.addEventListener('resize', ajustarAreaVisivel);
+              window.visualViewport.addEventListener('scroll', ajustarAreaVisivel);
+          }
+          window.addEventListener('resize', ajustarAreaVisivel);
+      }
+      function desativarAreaVisivel() {
+          if (window.visualViewport) {
+              window.visualViewport.removeEventListener('resize', ajustarAreaVisivel);
+              window.visualViewport.removeEventListener('scroll', ajustarAreaVisivel);
+          }
+          window.removeEventListener('resize', ajustarAreaVisivel);
+      }
+
+      const fireOriginal = Swal.fire.bind(Swal);
+      Swal.fire = function (...args) {
+          if (args.length && args[0] && typeof args[0] === 'object') {
+              const opcoes = Object.assign({ position: 'center', heightAuto: false, scrollbarPadding: false }, args[0]);
+              // Botões padronizados: EXCLUIR PDF (excluir vermelho / cancelar preto) e CAMPO OBRIGATÓRIO (OK preto)
+              const tituloAlertaPadrao = String(opcoes.title || '').toUpperCase();
+              if (tituloAlertaPadrao.indexOf('EXCLUIR PDF') !== -1) { opcoes.confirmButtonColor = '#ef4444'; opcoes.cancelButtonColor = '#000000'; }
+              if (tituloAlertaPadrao.indexOf('CAMPO OBRIGAT') !== -1) { opcoes.confirmButtonColor = '#000000'; }
+              const didOpenOriginal = opcoes.didOpen;
+              const didCloseOriginal = opcoes.didClose;
+              opcoes.didOpen = function (...a) {
+                  ativarAreaVisivel();
+                  if (typeof didOpenOriginal === 'function') return didOpenOriginal.apply(this, a);
+              };
+              opcoes.didClose = function (...a) {
+                  desativarAreaVisivel();
+                  if (typeof didCloseOriginal === 'function') return didCloseOriginal.apply(this, a);
+              };
+              args[0] = opcoes;
+          }
+          return fireOriginal(...args);
+      };
+  })();
+  </script>
+  <style>
+      .swal2-container {
+          position: fixed !important;
+          top: 0 !important; right: 0 !important; bottom: 0 !important; left: 0 !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          box-sizing: border-box !important;
+          padding: 12px !important;
+          overflow-y: auto !important;
+      }
+      .swal2-popup {
+          box-sizing: border-box !important;
+          margin: auto !important;
+          max-width: 100% !important;
+          max-height: calc(100vh - 24px);
+          max-height: calc(100dvh - 24px);
+          overflow-y: auto;
+      }
+      .swal2-title,
+      .swal2-html-container {
+          overflow-wrap: anywhere;
+          word-break: break-word;
+      }
+      .swal2-html-container {
+          max-height: 55vh;
+          max-height: 55dvh;
+          overflow-y: auto;
+      }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+  <style>
+    :root {
+      --bg-color: #f4f5f7;
+      --card-bg: #f8fafc;
+      --text-main: #111827;
+      --text-muted: #6b7280;
+      --border-color: #e5e7eb;
+      --primary-red: #b91c1c;
+      --primary-dark: #0f172a;
+      --accent-blue: #1d4ed8;
+      --radius: 6px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border-radius: var(--radius);
+      padding: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      border: 1px solid var(--border-color);
+    }
+
+    .form-group {
+      margin-bottom: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .form-group:last-child {
+      margin-bottom: 0;
+    }
+
+    label {
+      font-size: 0.65rem;
+      font-weight: 800;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .btn-manage-link {
+      background: none;
+      border: none;
+      color: var(--accent-blue);
+      font-size: 0.65rem;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+
+    input[type="text"],
+    input[type="date"],
+    input[type="time"],
+    input[type="number"],
+    select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius);
+      font-size: 0.85rem;
+      background-color: #ffffff;
+      color: var(--text-main);
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      text-transform: uppercase;
+    }
+
+    input:focus, select:focus {
+      border-color: var(--primary-dark);
+      background-color: #fff;
+    }
+
+    .time-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 8px;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 10px;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 0.8rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: opacity 0.2s, background-color 0.2s;
+    }
+
+    .btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .btn:active:not(:disabled) {
+      opacity: 0.8;
+    }
+
+    .btn-red { background-color: var(--primary-red); color: white; }
+    .btn-dark { 
+  background-color: #2563eb; /* bg-blue-600 */
+  color: white; 
+}
+.btn-dark:hover {
+  background-color: #3b82f6; /* hover:bg-blue-500 */
+}
+    .btn-blue { background-color: #1e40af; color: white; }
+    .btn-outline { background-color: #ffffff; border: 1px solid var(--border-color); color: var(--text-main); }
+    .btn-danger-outline { 
+  background-color: #dc2626; /* bg-red-600 */
+  color: #ffffff; 
+  border: none;
+}
+.btn-danger-outline:hover {
+  background-color: #ef4444; /* hover:bg-red-500 */
+}
+    .btn-green { 
+  background-color: #16a34a; /* bg-green-600 */
+  color: white; 
+}
+.btn-green:hover {
+  background-color: #22c55e; /* hover:bg-green-500 */
+}
+
+    .section-title {
+      font-size: 0.8rem;
+      font-weight: 800;
+      color: var(--primary-dark);
+      text-transform: uppercase;
+      margin-bottom: 12px;
+      letter-spacing: 0.5px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .item-card {
+      background: var(--card-bg);
+      border-radius: var(--radius);
+      overflow: hidden;
+      border: 1px solid var(--border-color);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+
+    .item-header {
+      background-color: var(--primary-dark);
+      color: white;
+      padding: 8px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 800;
+      font-size: 0.9rem;
+    }
+
+    .item-actions-group {
+      display: flex;
+      gap: 6px;
+    }
+
+    .btn-icon {
+      background: none;
+      border: none;
+      color: white;
+      cursor: pointer;
+      font-size: 0.9rem;
+      opacity: 0.8;
+      padding: 2px 4px;
+    }
+
+    .btn-icon:hover { opacity: 1; }
+
+    .item-body {
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .item-details {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 8px;
+    }
+
+    .detail-group label {
+      font-size: 0.6rem;
+    }
+
+    .detail-group div {
+      font-size: 0.85rem;
+      font-weight: 800;
+      color: var(--primary-dark);
+      text-transform: uppercase;
+    }
+
+    .badge-plate {
+      display: inline-block;
+      background-color: #e0e7ff;
+      color: #3730a3;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-weight: 700;
+      margin-top: 2px;
+    }
+
+    .images-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 8px;
+      width: 100%;
+    }
+
+    .item-image {
+      width: 100%;
+      height: 95px;
+      object-fit: contain;
+      border-radius: var(--radius);
+      border: 1px solid var(--border-color);
+      background-color: #f3f4f6;
+      cursor: zoom-in;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .item-image:hover {
+      transform: scale(1.03);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+
+    .modal {
+      display: none;
+      position: fixed;
+      top:0; left:0; right:0; bottom:0;
+      background: rgba(0,0,0,0.6);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      backdrop-filter: blur(2px);
+    }
+
+    .modal.active { display: flex; }
+
+    .modal-content {
+      background: white;
+      border-radius: var(--radius);
+      width: 100%;
+      max-width: 420px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      max-height: 85vh;
+      box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2);
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 8px;
+    }
+
+    .modal-header h4 { font-size: 0.9rem; font-weight: 800; text-transform: uppercase; }
+
+    .modal-list {
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 250px;
+      border: 1px solid var(--border-color);
+      padding: 8px;
+      border-radius: var(--radius);
+    }
+
+    .modal-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px;
+      background: #f9fafb;
+      border-radius: 4px;
+      font-size: 0.8rem;
+    }
+
+    .modal-item-actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    .btn-sm {
+      padding: 3px 8px;
+      font-size: 0.7rem;
+      border-radius: 3px;
+      cursor: pointer;
+      border: none;
+    }
+
+    .lightbox-modal {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.9);
+      z-index: 2000;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      backdrop-filter: blur(4px);
+    }
+
+    .lightbox-modal.active { display: flex; }
+
+    .lightbox-img-wrapper {
+      position: relative;
+      max-width: 95vw;
+      max-height: 90vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .lightbox-img {
+      max-width: 100%;
+      max-height: 90vh;
+      object-fit: contain;
+      border-radius: var(--radius);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+
+    .lightbox-close {
+      position: absolute;
+      top: -16px;
+      right: -16px;
+      background: var(--primary-red);
+      color: white;
+      border: none;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      font-size: 1.2rem;
+      font-weight: bold;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #preview-container {
+      width: 100%;
+      margin-top: 8px;
+      display: none;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .preview-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 6px;
+    }
+
+    .preview-thumb-box {
+      position: relative;
+      width: 100%;
+      padding-top: 100%;
+      border-radius: var(--radius);
+      overflow: hidden;
+      border: 1px solid var(--border-color);
+      background: #f3f4f6;
+      cursor: zoom-in;
+    }
+
+    .preview-thumb-box img {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      object-fit: contain;
+    }
+
+    .preview-thumb-remove {
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      background: rgba(185, 28, 28, 0.9);
+      color: white;
+      border: none;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      font-size: 10px;
+      font-weight: bold;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2;
+    }
+
+    .img-counter {
+      font-size: 0.65rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-align: right;
+    }
+
+    .pdf-history-header {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .pdf-search-wrapper {
+      position: relative;
+    }
+
+    .pdf-search-wrapper input {
+      padding-left: 32px;
+    }
+
+    .pdf-search-icon {
+      position: absolute;
+      left: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      pointer-events: none;
+    }
+
+    .pdf-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+
+    .pdf-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      background: #f9fafb;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+    }
+
+    .pdf-card-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      overflow: hidden;
+      cursor: pointer;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .pdf-card-icon {
+      font-size: 1.6rem;
+      flex-shrink: 0;
+    }
+
+    .pdf-card-text {
+      overflow: hidden;
+      min-width: 0;
+      width: 100%;
+    }
+
+    .pdf-card-title {
+      font-size: 0.8rem;
+      font-weight: 800;
+      color: var(--primary-dark);
+      text-transform: uppercase;
+      word-break: break-word;
+      overflow-wrap: break-word;
+      white-space: normal;
+    }
+
+    .pdf-card-meta {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .pdf-card-actions {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .btn-icon-pdf {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 1rem;
+      padding: 4px 6px;
+      border-radius: 4px;
+      transition: background 0.15s;
+    }
+
+    .btn-icon-pdf:hover {
+      background: rgba(0, 0, 0, 0.06);
+    }
+
+    .pdf-empty-state {
+      text-align: center;
+      padding: 24px 12px;
+      border: 1px dashed var(--border-color);
+      border-radius: var(--radius);
+      font-size: 0.7rem;
+      font-weight: 800;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .partial-day-block {
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: var(--radius);
+      padding: 12px;
+      margin-bottom: 10px;
+    }
+
+    .partial-day-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #e2e8f0;
+      margin-bottom: 8px;
+    }
+
+    .partial-day-title {
+      font-size: 0.8rem;
+      font-weight: 800;
+      color: #1e3a8a;
+      text-transform: uppercase;
+    }
+
+    @media print {
+      .no-print { display: none !important; }
+      body { background-color: #fff !important; }
+      #conteudo-principal { border: none !important; box-shadow: none !important; }
+    }
+  </style>
+</head>
+
+<body class="bg-[#f1f5f9] text-gray-800 font-sans min-h-screen antialiased pb-12">
+
+  <header class="bg-[#001039] text-white shadow-md no-print">
+      <div class="max-w-5xl mx-auto px-4 py-3 flex flex-col items-center justify-center text-center">
+          <div class="bg-blue p-1.5 rounded-lg shadow-sm mb-2">
+              <img id="appLogo" class="h-64 object-contain" alt="Logo DGAD">
+          </div>
+          
+      </div>
+  </header>
+
+  <div id="conteudo-principal" class="max-w-4xl mx-auto bg-white p-2 sm:p-8 mt-0 sm:mt-6 shadow-md rounded-none sm:rounded-lg border border-gray-200">
+    
+        <header class="text-center border-b-2 border-gray-800 pb-4 mb-6">
+            <div class="flex justify-center mb-3">
+                <img  src="https://upload.wikimedia.org/wikipedia/commons/e/e2/Ins%C3%ADgnia_bras%C3%A3o_estilizado_governos_Wilson_Witzel_e_Cl%C3%A1udio_Castro_RJ.png" alt="Brasão do Estado do Rio de Janeiro" class="h-24 w-auto object-contain">
+        </div>
+        <h1 class="text-lg sm:text-xl font-bold uppercase tracking-wide">Governo do Estado do Rio de Janeiro</h1>
+            <h2 class="text-md sm:text-lg font-semibold uppercase">Departamento de Trânsito do Estado do Rio de Janeiro - DETRAN.RJ</h2>
+            <h3 class="text-sm sm:text-md font-medium text-black-600 uppercase mt-1">Diretoria Geral das Atividades de Desmontagem</h3>
+            <h3 class="text-sm sm:text-md font-medium text-black-600 uppercase mt-1">DIVISÃO DE FISCALIZAÇÃO</h3>
+    </header>
+
+    <div class="card">
+      <div class="form-group">
+        <label for="header-atividade">NATUREZA DA ATIVIDADE: *</label>
+        <select id="header-atividade" onchange="atualizarCamposNatureza()">
+          <option value="" selected>ESCOLHA UMA OPÇÃO</option>
+          <option value="FISCALIZAÇÃO DE EMPRESA CREDENCIADA">FISCALIZAÇÃO DE EMPRESA CREDENCIADA</option>
+          <option value="FISCALIZAÇÃO DE PRIMEIRO CREDENCIAMENTO">FISCALIZAÇÃO DE PRIMEIRO CREDENCIAMENTO</option>
+          <option value="FISCALIZAÇÃO DE RENOVAÇÃO DE CREDENCIAMENTO">FISCALIZAÇÃO DE RENOVAÇÃO DE CREDENCIAMENTO</option>
+          <option value="FISCALIZAÇÃO DE APURAÇÃO DE DENÚNCIA">FISCALIZAÇÃO DE APURAÇÃO DE DENÚNCIA</option>
+          <option value="FISCALIZAÇÃO DE FORÇA TAREFA">FISCALIZAÇÃO DE FORÇA TAREFA</option>
+          <option value="FISCALIZAÇÃO DE APOIO">FISCALIZAÇÃO DE APOIO</option>
+        </select>
+      </div>
+      <div class="form-group" id="grupo-apoio" style="display: none;">
+        <label for="header-apoio">APOIO À: *</label>
+        <input type="text" id="header-apoio" placeholder="EX.: DRFA / POLÍCIA CIVIL" oninput="var s=this.selectionStart,e=this.selectionEnd;this.value=this.value.toUpperCase();this.setSelectionRange(s,e);">
+      </div>
+      <div class="form-group" id="grupo-fase-forca-tarefa" style="display: none;">
+        <label for="header-fase-forca-tarefa">FASE DA FORÇA TAREFA: *</label>
+        <input data-so-numeros type="text" inputmode="numeric" autocomplete="off" id="header-fase-forca-tarefa" placeholder="FASE DA FORÇA TAREFA" class="uppercase">
+      </div>
+      <div class="form-group" id="grupo-estabelecimento" style="display: none;">
+        <label for="header-estabelecimento">EMPRESA / ESTABELECIMENTO: *</label>
+        <input type="text" id="header-estabelecimento" placeholder="RAZÃO SOCIAL / NOME FANTASIA" oninput="this.value = this.value.toUpperCase()">
+      </div>
+      <div class="form-group" id="grupo-endereco" style="display: none;">
+        <label for="header-local">ENDEREÇO: *</label>
+        <input type="text" id="header-local" placeholder="ENDEREÇO COMPLETO" oninput="this.value = this.value.toUpperCase()">
+      </div>
+      <div class="form-group">
+        <label for="header-data">DATA: *</label>
+        <input type="date" id="header-data" onchange="validarEstadoBotoesData()">
+      </div>
+    </div>
+
+    <div class="card" id="form-card">
+      <div class="section-title">
+        <span id="form-section-title">NOVA CARGA</span>
+        <button id="btn-cancel-edit" class="btn-sm btn-outline" style="display:none;" onclick="cancelarEdicao()">CANCELAR EDIÇÃO</button>
+      </div>
+      
+      <div class="form-group">
+        <label>
+          RECICLADORA: *
+          <button class="btn-manage-link" type="button" onclick="openManager('recicladoras')">+ GERENCIAR</button>
+        </label>
+        <select id="reg-recicladora"></select>
+      </div>
+
+      <div class="form-group">
+        <label>
+          TIPO DE VEÍCULO: *
+          <button class="btn-manage-link" type="button" onclick="openManager('veiculos')">+ GERENCIAR</button>
+        </label>
+        <select id="reg-veiculo"></select>
+      </div>
+
+      <div class="form-group">
+        <label for="reg-placa">PLACA DO VEÍCULO: *</label>
+        <input type="text" id="reg-placa" placeholder="EX: ABC1D23 OU ABC1234" maxlength="10" oninput="this.value = this.value.toUpperCase()">
+      </div>
+
+      <div class="form-group">
+        <label>HORÁRIOS DA LOGÍSTICA: *</label>
+        <div class="time-grid">
+          <div>
+            <span class="text-[0.65rem] font-bold text-gray-500 uppercase">CHEGADA AO LOCAL:</span>
+            <input type="time" id="reg-chegada">
+          </div>
+          <div>
+            <span class="text-[0.65rem] font-bold text-gray-500 uppercase">INÍCIO DO RECOLHIMENTO:</span>
+            <input type="time" id="reg-inicio">
+          </div>
+          <div>
+            <span class="text-[0.65rem] font-bold text-gray-500 uppercase">TÉRMINO DO RECOLHIMENTO:</span>
+            <input type="time" id="reg-termino">
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>IMAGENS (MÁXIMO 5): *</label>
+        <div class="btn-row">
+          <button class="btn btn-outline" type="button" onclick="triggerCameraInput()">📷 CAPTURAR FOTO</button>
+          <input type="file" id="file-camera" accept="image/*" capture="environment" style="display:none;" onchange="handleImageUpload(event)">
+          
+          <button class="btn btn-outline" type="button" onclick="triggerUploadInput()">📁 GALERIA / ARQUIVOS</button>
+          <input type="file" id="file-upload" accept="image/*" multiple style="display:none;" onchange="handleImageUpload(event)">
+        </div>
+        <div id="preview-container">
+          <div class="img-counter" id="img-counter-label">0 / 5 imagens anexadas</div>
+          <div class="preview-grid" id="preview-grid"></div>
+        </div>
+      </div>
+
+      <div class="flex flex-col sm:flex-row justify-end gap-2 mt-4">
+        <button id="btn-salvar" class="btn btn-dark w-full sm:w-44" onclick="salvarRegistro()">REGISTRAR CARGA</button>
+      </div>
+    </div>
+
+    <div class="card bg-blue-50 border-blue-200">
+      <div class="flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div>
+          <h4 class="text-xs font-bold text-blue-900 uppercase">Relatório Parcial por Data</h4>
+          <p class="text-[0.7rem] text-blue-700 uppercase">Salve as cargas do dia preenchido e limpe o campo data para apontar um novo lote de cargas.</p>
+        </div>
+        <button id="btn-salvar-parcial" class="btn btn-blue w-full sm:w-60" onclick="salvarRelatorioParcial()">
+          💾 SALVAR RELATÓRIO PARCIAL
+        </button>
+      </div>
+    </div>
+
+    <div class="card" id="secao-relatorio-parcial">
+      <div class="section-title">
+        <span>📋 RELATÓRIO PARCIAL</span>
+      </div>
+      <div id="container-relatorio-parcial"></div>
+    </div>
+
+    <div class="section-title mt-2">
+      <span id="titulo-cargas-corrente">CARGAS LANÇADAS NA DATA ATUAL</span>
+    </div>
+    <div id="items-list" style="display: flex; flex-direction: column; gap: 16px;"></div>
+
+    <div id="barra-acoes" class="no-print mt-2 flex flex-col sm:flex-row flex-wrap gap-3 justify-end items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+      <button type="button" onclick="limparTabela()"
+                class="w-full sm:w-auto px-4 py-2.5 bg-red-600 hover:bg-red-500 border border-red-200 text-white font-bold rounded-lg text-sm  transition flex items-center justify-center space-x-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+                <span>LIMPAR PÁGINA</span>
+            </button>
+      <button type="button" onclick="compartilharResumo()"
+                class="w-full sm:w-auto px-5 py-2.5 bg-green-600 hover:bg-green-500 text-white font-bold rounded-lg text-sm shadow-md transition flex items-center justify-center space-x-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>
+                <span>COMPARTILHAR RESUMO (WHATSAPP)</span>
+            </button>
+      <button type="button" onclick="perguntarResumoWhatsAppAntesDoPDF()"
+                class="w-full sm:w-auto px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg text-sm shadow-md transition flex items-center justify-center space-x-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 22h14a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v4"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m3 15 2 2 4-4"/></svg>
+                <span>GERAR PDF</span>
+            </button>
+    </div>
+
+    <div class="card no-print" id="secao-historico-pdf" style="margin-top: 16px;">
+      <div class="pdf-history-header">
+        <div class="section-title" style="margin-bottom: 0;">
+          <span>📄 PDF'S GERADOS - CONTROLE DE CARGAS</span>
+        </div>
+        <div class="pdf-search-wrapper" style="margin-top: 8px;">
+          <span class="pdf-search-icon">🔍</span>
+          <input type="text" id="busca-pdf" oninput="renderizarGridPDFs()" placeholder="BUSCAR PDF POR ATIVIDADE, LOCAL OU DATA...">
+        </div>
+      </div>
+      <div class="pdf-grid" id="grid-pdfs-container"></div>
+    </div>
+
+  </div>
+
+  <div class="modal" id="manager-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h4 id="modal-title">Gerenciar Lista</h4>
+        <button class="btn-sm btn-outline" onclick="closeManager()">✕</button>
+      </div>
+      
+      <div id="modal-add-form" class="form-group">
+        <input type="text" id="modal-input-name" placeholder="Nome / Descrição..." oninput="this.value = this.value.toUpperCase()">
+        <button class="btn btn-dark" style="margin-top:6px;" onclick="addOptionItem()">ADICIONAR</button>
+      </div>
+
+      <div class="modal-list" id="modal-items-container"></div>
+    </div>
+  </div>
+
+  <div class="lightbox-modal" id="lightbox-modal" onclick="closeLightbox()">
+    <div class="lightbox-img-wrapper" onclick="event.stopPropagation()">
+      <button class="lightbox-close" onclick="closeLightbox()">✕</button>
+      <img id="lightbox-img" class="lightbox-img" src="" alt="Imagem Ampliada">
+    </div>
+  </div>
+
+  <script type="text/armazem">
+    const LOGO_DGAD_SUPORTE = "carga.png";
+
+    const STORAGE_KEYS = {
+      HEADER: 'detran_header_data_carga',
+      FORM: 'detran_current_form_carga',
+      RECICLADORAS: 'detran_list_recicladoras_carga',
+      VEICULOS: 'detran_list_veiculos_carga',
+      REGISTROS: 'detran_registros_list_carga',
+      PARCIAIS: 'detran_relatorio_parcial_carga',
+      HISTORICO_PDFS: 'detran_historico_pdfs_carga'
+    };
+
+    const DB_NAME = 'DetranControleCargaDB';
+    const DB_VERSION = 1;
+    const STORE_PDFS = 'historico_pdfs';
+
+    function normalizarTexto(texto) {
+      return (texto || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
+    }
+
+    function openIndexedDB() {
+      return new Promise((resolve, reject) => {
+        if (!window.indexedDB) return reject(new Error('IndexedDB indisponível'));
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onupgradeneeded = (e) => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains(STORE_PDFS)) {
+            db.createObjectStore(STORE_PDFS, { keyPath: 'id' });
+          }
+        };
+        request.onsuccess = (e) => resolve(e.target.result);
+        request.onerror = (e) => reject(e.target.error);
+      });
+    }
+
+    /* ===== Histórico de PDFs: agora no Armazem (IndexedDB, sem limite de tamanho) ===== */
+    const HIST_KEY = 'historico_pdfs_carga';
+
+    function lerHistoricoLocal() {
+      try { return JSON.parse(Armazem.ls.getItem(HIST_KEY)) || []; } catch (_) { return []; }
+    }
+
+    function blobDoItemAntigo(item) {
+      if (item && item.blob instanceof Blob) return item.blob;
+      if (item && item.dataUri) return Armazem.dataUriParaBlob(item.dataUri);
+      return null;
+    }
+
+    let migracaoHistorico = null;
+    function migrarHistoricoAntigoParaIndexedDB() {
+      if (migracaoHistorico) return migracaoHistorico;
+      migracaoHistorico = (async () => {
+        // 1) lista antiga guardada no localStorage
+        try {
+          const chaveAntiga = STORAGE_KEYS.HISTORICO_PDFS;
+          const antigos = JSON.parse(Armazem.ls.getItem(chaveAntiga));
+          if (Array.isArray(antigos) && antigos.length) {
+            const existentes = new Set(lerHistoricoLocal().map(i => String(i.id)));
+            for (const item of antigos) {
+              if (existentes.has(String(item.id))) continue;
+              const blob = blobDoItemAntigo(item);
+              if (blob) await Armazem.addPDF(HIST_KEY, item, blob);
+            }
+          }
+          if (antigos !== null) Armazem.ls.removeItem(chaveAntiga);
+        } catch (e) { console.warn('Migração (localStorage):', e); }
+
+        // 2) banco antigo (IndexedDB próprio desta página)
+        try {
+          const db = await openIndexedDB();
+          const todos = await new Promise((res, rej) => {
+            const r = db.transaction(STORE_PDFS, 'readonly').objectStore(STORE_PDFS).getAll();
+            r.onsuccess = () => res(r.result || []);
+            r.onerror = () => rej(r.error);
+          });
+          for (const item of todos) {
+            const blob = blobDoItemAntigo(item);
+            if (!blob) continue;
+            const jaExiste = lerHistoricoLocal().some(i => String(i.id) === String(item.id));
+            const f0 = Armazem.falhas();
+            if (!jaExiste) await Armazem.addPDF(HIST_KEY, item, blob);
+            if (await Armazem.aguardarGravacao(f0)) {
+              await new Promise(res => {
+                const r = db.transaction(STORE_PDFS, 'readwrite').objectStore(STORE_PDFS).delete(item.id);
+                r.onsuccess = r.onerror = () => res();
+              });
+            }
+          }
+        } catch (_) {}
+      })();
+      return migracaoHistorico;
+    }
+
+    async function dbSalvarPDF(pdfObj) {
+      const blob = blobDoItemAntigo(pdfObj);
+      if (!blob) throw new Error('PDF sem conteúdo');
+      await Armazem.addPDF(HIST_KEY, pdfObj, blob);
+      return true;
+    }
+
+    async function dbObterTodosPDFs() {
+      await migrarHistoricoAntigoParaIndexedDB();
+      return lerHistoricoLocal();
+    }
+
+    async function dbObterPDFPorId(id) {
+      await migrarHistoricoAntigoParaIndexedDB();
+      const item = lerHistoricoLocal().find(i => String(i.id) === String(id));
+      if (!item) return null;
+      const copia = Object.assign({}, item);
+      copia.blob = await Armazem.blobDe(copia);
+      return copia;
+    }
+
+    async function dbExcluirPDF(id) {
+      const lista = lerHistoricoLocal().filter(i => String(i.id) !== String(id));
+      Armazem.ls.setItem(HIST_KEY, JSON.stringify(lista));
+      return true;
+    }
+
+    const defaultRecicladoras = [
+      { id: 'rec_1', nome: 'BAIXADAÇO' },
+      { id: 'rec_2', nome: 'JRD' },
+      { id: 'rec_3', nome: 'MELO' },
+      { id: 'rec_4', nome: 'RECICLA RIO' }
+    ];
+
+    const defaultVeiculos = [
+      { id: 'v_1', nome: 'CAMINHÃO CAÇAMBA' },
+      { id: 'v_2', nome: 'CAMINHÃO GARRA' },
+      { id: 'v_3', nome: 'CAMINHÃO BI-TRUCK' },
+      { id: 'v_4', nome: 'CAMINHONETE OPERACIONAL' },
+      { id: 'v_5', nome: 'CARRETA 2 EIXOS' },
+      
+    ];
+
+    let recicladoras = JSON.parse(Armazem.ls.getItem(STORAGE_KEYS.RECICLADORAS)) || defaultRecicladoras;
+    let tiposVeiculos = JSON.parse(Armazem.ls.getItem(STORAGE_KEYS.VEICULOS)) || defaultVeiculos;
+    let registros = JSON.parse(Armazem.ls.getItem(STORAGE_KEYS.REGISTROS)) || [];
+    let relatoriosParciais = JSON.parse(Armazem.ls.getItem(STORAGE_KEYS.PARCIAIS)) || [];
+    let currentImages = [];
+
+    let activeManagerType = ""; 
+    let editingItemId = null;
+    let editingParcialId = null;
+    let editingOptionId = null;
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      const logo = document.getElementById('appLogo');
+      if (logo) logo.src = LOGO_DGAD_SUPORTE;
+
+      loadHeaderData();
+      renderSelects();
+      loadFormDraft();
+      renderRegistros();
+      renderRelatoriosParciais();
+      await renderizarGridPDFs();
+      validarEstadoBotoesData();
+      atualizarCamposNatureza();
+
+      const headerInputs = ['header-atividade', 'header-apoio', 'header-fase-forca-tarefa', 'header-estabelecimento', 'header-local', 'header-data'];
+      headerInputs.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.addEventListener('input', (e) => {
+            if (e.target.type === 'text') e.target.value = e.target.value.toUpperCase();
+            saveHeaderData();
+            validarEstadoBotoesData();
+          });
+          el.addEventListener('change', () => {
+            saveHeaderData();
+            validarEstadoBotoesData();
+          });
+        }
+      });
+
+      const formInputs = ['reg-recicladora', 'reg-veiculo', 'reg-placa', 'reg-chegada', 'reg-inicio', 'reg-termino'];
+      formInputs.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.addEventListener('input', (e) => {
+            if (e.target.type === 'text') e.target.value = e.target.value.toUpperCase();
+            if (!editingItemId) saveFormDraft();
+          });
+          el.addEventListener('change', () => {
+            if (!editingItemId) saveFormDraft();
+          });
+        }
+      });
+    });
+
+    function atualizarCamposNatureza() {
+      const natureza = document.getElementById('header-atividade').value;
+      const grupoApoio = document.getElementById('grupo-apoio');
+      const grupoFase = document.getElementById('grupo-fase-forca-tarefa');
+      const grupoEstab = document.getElementById('grupo-estabelecimento');
+      const grupoEndereco = document.getElementById('grupo-endereco');
+
+      if (!natureza) {
+          grupoApoio.style.display = 'none';
+          grupoFase.style.display = 'none';
+          grupoEstab.style.display = 'none';
+          grupoEndereco.style.display = 'none';
+          return;
+      }
+
+      const semFaseNemEndereco = [
+          'FISCALIZAÇÃO DE EMPRESA CREDENCIADA',
+          'FISCALIZAÇÃO DE PRIMEIRO CREDENCIAMENTO',
+          'FISCALIZAÇÃO DE RENOVAÇÃO DE CREDENCIAMENTO'
+      ].includes(natureza);
+      const semFase = natureza === 'FISCALIZAÇÃO DE APURAÇÃO DE DENÚNCIA' || natureza === 'FISCALIZAÇÃO DE APOIO';
+
+      grupoEstab.style.display = '';
+      grupoApoio.style.display = natureza === 'FISCALIZAÇÃO DE APOIO' ? '' : 'none';
+
+      if (semFaseNemEndereco) {
+          grupoFase.style.display = 'none';
+          grupoEndereco.style.display = 'none';
+      } else if (semFase) {
+          grupoFase.style.display = 'none';
+          grupoEndereco.style.display = '';
+      } else {
+          grupoFase.style.display = '';
+          grupoEndereco.style.display = '';
+      }
+    }
+
+    function validarEstadoBotoesData() {
+        const dataInput = document.getElementById('header-data');
+        const btnSalvarCarga = document.getElementById('btn-salvar');
+        const btnSalvarParcial = document.getElementById('btn-salvar-parcial');
+        const hasData = Boolean(dataInput && dataInput.value);
+
+        if (btnSalvarCarga) {
+            btnSalvarCarga.disabled = false;
+            btnSalvarCarga.title = hasData ? '' : 'A data do cabeçalho é obrigatória.';
+        }
+        if (btnSalvarParcial) {
+            btnSalvarParcial.disabled = false;
+            btnSalvarParcial.title = !hasData ? 'A data do cabeçalho é obrigatória.' : (registros.length === 0 ? 'Adicione ao menos uma carga.' : '');
+        }
+    }
+
+    function openLightbox(src) {
+      document.getElementById('lightbox-img').src = src;
+      document.getElementById('lightbox-modal').classList.add('active');
+    }
+
+    function closeLightbox() {
+      document.getElementById('lightbox-modal').classList.remove('active');
+      document.getElementById('lightbox-img').src = '';
+    }
+
+    function rolarCampoParaCentro(el, aoTerminar) {
+        if (!el || !el.getBoundingClientRect) {
+            if (aoTerminar) aoTerminar();
+            return;
+        }
+        const rect = el.getBoundingClientRect();
+        const meio = rect.top + window.pageYOffset - (window.innerHeight / 2) + (rect.height / 2);
+        window.scrollTo({ top: Math.max(0, meio), behavior: 'smooth' });
+        if (!aoTerminar) return;
+
+        // aguarda a rolagem suave terminar para só então executar a ação (colocar o cursor)
+        let ultimo = window.pageYOffset, estavel = 0, quadros = 0;
+        const acompanhar = () => {
+            quadros++;
+            const atual = window.pageYOffset;
+            estavel = Math.abs(atual - ultimo) < 1 ? estavel + 1 : 0;
+            ultimo = atual;
+            if (estavel >= 8 || quadros > 90) aoTerminar();
+            else requestAnimationFrame(acompanhar);
+        };
+        requestAnimationFrame(acompanhar);
+    }
+
+    function focarNoCampo(el) {
+        if (!el || !el.focus) return;
+        try { el.focus({ preventScroll: true }); } catch (_) { el.focus(); }
+        try { if (el.select && el.tagName !== 'SELECT') el.select(); } catch (_) {}
+    }
+
+    // Chamada SOMENTE depois que o alerta fechou: rola o campo para o meio da tela e então coloca o cursor
+    function irParaCampoAposAlerta(alvo, campo) {
+        setTimeout(() => {
+            rolarCampoParaCentro(alvo, () => focarNoCampo(campo));
+        }, 120);
+    }
+
+    function mostrarAlertaAviso(titulo, mensagemHTML, elementoParaFocar) {
+        const elementoAlvo = elementoParaFocar;
+        if (elementoParaFocar) {
+            elementoAlvo.style.outline = '4px solid #dc2626';
+            elementoAlvo.style.transition = 'outline 0.3s';
+        }
+
+        Swal.fire({
+            icon: 'warning',
+            title: titulo,
+            html: mensagemHTML,
+            confirmButtonText: 'OK',
+            confirmButtonColor: '#000000',
+            customClass: { popup: 'font-sans' },
+            returnFocus: false,
+            didClose: () => {
+                if (elementoParaFocar) {
+                    irParaCampoAposAlerta(elementoAlvo, elementoParaFocar);
+                    setTimeout(() => {
+                        if (elementoAlvo) elementoAlvo.style.outline = 'none';
+                    }, 2500);
+                }
+            }
+        });
+    }
+    
+    function perguntarResumoWhatsAppAntesDoPDF() {
+        Swal.fire({
+            icon: 'question',
+            title: 'RESUMO NO WHATSAPP',
+            html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> O <b>RESUMO NO WHATSAPP</b> JÁ FOI COMPARTILHADO?',
+            showCancelButton: true,
+            allowOutsideClick: false,
+            confirmButtonColor: '#000000',
+            cancelButtonColor: '#d33',
+            confirmButtonText: 'SIM, JÁ FOI',
+            cancelButtonText: 'NÃO, AINDA NÃO'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                gerarPDFPersonalizado();
+                return;
+            }
+            if (result.dismiss === Swal.DismissReason.cancel) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'COMPARTILHE O RESUMO PRIMEIRO',
+                    html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> O BOTÃO <b>"GERAR PDF"</b> SÓ É LIBERADO APÓS O COMPARTILHAMENTO DO <span class="text-red-600 font-bold">RESUMO NO WHATSAPP</span>!',
+                    showCancelButton: true,
+                    allowOutsideClick: false,
+                    confirmButtonColor: '#16a34a',
+                    cancelButtonColor: '#000000',
+                    confirmButtonText: 'COMPARTILHAR AGORA',
+                    cancelButtonText: 'FECHAR'
+                }).then((r2) => {
+                    if (r2.isConfirmed) compartilharResumo();
+                });
+            }
+        });
+    }
+
+    function sortAlphabetically(arr) {
+      return arr.sort((a, b) => a.nome.localeCompare(b.nome));
+    }
+
+    function renderSelects() {
+      recicladoras = sortAlphabetically(recicladoras);
+      tiposVeiculos = sortAlphabetically(tiposVeiculos);
+
+      const selRec = document.getElementById('reg-recicladora');
+      selRec.innerHTML = '<option value="">SELECIONE A RECICLADORA</option>';
+      recicladoras.forEach(rec => {
+        const opt = document.createElement('option');
+        opt.value = rec.id;
+        opt.textContent = rec.nome.toUpperCase();
+        selRec.appendChild(opt);
+      });
+
+      const selVeic = document.getElementById('reg-veiculo');
+      selVeic.innerHTML = '<option value="">SELECIONE O TIPO DE VEÍCULO</option>';
+      tiposVeiculos.forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v.id;
+        opt.textContent = v.nome.toUpperCase();
+        selVeic.appendChild(opt);
+      });
+
+      try {
+        Armazem.ls.setItem(STORAGE_KEYS.RECICLADORAS, JSON.stringify(recicladoras));
+        Armazem.ls.setItem(STORAGE_KEYS.VEICULOS, JSON.stringify(tiposVeiculos));
+      } catch (_) {}
+    }
+
+    function saveHeaderData() {
+      const data = {
+        atividade: document.getElementById('header-atividade').value.toUpperCase(),
+        apoio: document.getElementById('header-apoio').value.toUpperCase(),
+        fase: document.getElementById('header-fase-forca-tarefa').value.toUpperCase(),
+        estabelecimento: document.getElementById('header-estabelecimento').value.toUpperCase(),
+        local: document.getElementById('header-local').value.toUpperCase(),
+        data: document.getElementById('header-data').value
+      };
+      try {
+        Armazem.ls.setItem(STORAGE_KEYS.HEADER, JSON.stringify(data));
+      } catch (_) {}
+    }
+
+    function loadHeaderData() {
+      const saved = Armazem.ls.getItem(STORAGE_KEYS.HEADER);
+      if (saved) {
+        try {
+          const data = JSON.parse(saved);
+          document.getElementById('header-atividade').value = (data.atividade || '').toUpperCase();
+          document.getElementById('header-apoio').value = (data.apoio || '').toUpperCase();
+          document.getElementById('header-fase-forca-tarefa').value = (data.fase || '').toUpperCase();
+          document.getElementById('header-estabelecimento').value = (data.estabelecimento || '').toUpperCase();
+          document.getElementById('header-local').value = (data.local || '').toUpperCase();
+          document.getElementById('header-data').value = data.data || '';
+        } catch (_) {}
+      }
+    }
+
+    function saveFormDraft() {
+      if (editingItemId) return;
+      const draft = {
+        recicladoraId: document.getElementById('reg-recicladora').value,
+        veiculoId: document.getElementById('reg-veiculo').value,
+        placa: document.getElementById('reg-placa').value.toUpperCase(),
+        chegada: document.getElementById('reg-chegada').value,
+        inicio: document.getElementById('reg-inicio').value,
+        termino: document.getElementById('reg-termino').value,
+        images: currentImages
+      };
+      try {
+        Armazem.ls.setItem(STORAGE_KEYS.FORM, JSON.stringify(draft));
+      } catch (_) {}
+    }
+
+    function loadFormDraft() {
+      if (editingItemId) return;
+      const saved = Armazem.ls.getItem(STORAGE_KEYS.FORM);
+      if (saved) {
+        try {
+          const draft = JSON.parse(saved);
+          document.getElementById('reg-recicladora').value = draft.recicladoraId || '';
+          document.getElementById('reg-veiculo').value = draft.veiculoId || '';
+          document.getElementById('reg-placa').value = (draft.placa || '').toUpperCase();
+          document.getElementById('reg-chegada').value = draft.chegada || '';
+          document.getElementById('reg-inicio').value = draft.inicio || '';
+          document.getElementById('reg-termino').value = draft.termino || '';
+
+          if (Array.isArray(draft.images)) {
+            currentImages = draft.images;
+            renderImagePreviews();
+          }
+        } catch (_) {}
+      }
+    }
+
+    function resetFormState() {
+      editingItemId = null;
+      editingParcialId = null;
+      document.getElementById('form-section-title').textContent = 'NOVA CARGA';
+      document.getElementById('btn-cancel-edit').style.display = 'none';
+      document.getElementById('btn-salvar').textContent = 'ADICIONAR CARGA';
+
+      document.getElementById('reg-recicladora').value = '';
+      document.getElementById('reg-veiculo').value = '';
+      document.getElementById('reg-placa').value = '';
+      document.getElementById('reg-chegada').value = '';
+      document.getElementById('reg-inicio').value = '';
+      document.getElementById('reg-termino').value = '';
+      currentImages = [];
+      renderImagePreviews();
+      Armazem.ls.removeItem(STORAGE_KEYS.FORM);
+    }
+
+    function cancelarEdicao() {
+      resetFormState();
+      loadFormDraft();
+    }
+
+    function triggerCameraInput() {
+      if (currentImages.length >= 5) {
+        mostrarAlertaAviso('LIMITE DE IMAGENS', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> LIMITE MÁXIMO DE 5 IMAGENS POR CARGA ATINGIDO!');
+        return;
+      }
+      document.getElementById('file-camera').click();
+    }
+
+    function triggerUploadInput() {
+      if (currentImages.length >= 5) {
+        mostrarAlertaAviso('LIMITE DE IMAGENS', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> LIMITE MÁXIMO DE 5 IMAGENS POR CARGA ATINGIDO!');
+        return;
+      }
+      document.getElementById('file-upload').click();
+    }
+
+    function handleImageUpload(event) {
+      const files = Array.from(event.target.files);
+      if (!files.length) return;
+
+      const remainingSlots = 5 - currentImages.length;
+      if (files.length > remainingSlots) {
+        mostrarAlertaAviso('LIMITE DE IMAGENS', `<span class="text-amber-500 font-bold">ATENÇÃO:</span> VOCÊ SÓ PODE ADICIONAR NO MÁXIMO <span class="text-red-500 font-bold">${remainingSlots} IMAGENS</span>.`);
+      }
+
+      const filesToProcess = files.slice(0, remainingSlots);
+      let processedCount = 0;
+
+      filesToProcess.forEach(file => {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          const img = new Image();
+          img.src = e.target.result;
+          img.onload = function() {
+            const MAX_DIMENSION = 800; 
+            let width = img.width;
+            let height = img.height;
+
+            if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+              if (width > height) {
+                height = Math.round((height * MAX_DIMENSION) / width);
+                width = MAX_DIMENSION;
+              } else {
+                width = Math.round((width * MAX_DIMENSION) / height);
+                height = MAX_DIMENSION;
+              }
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+
+            const base64Resized = canvas.toDataURL('image/jpeg', 0.75);
+            currentImages.push(base64Resized);
+            
+            processedCount++;
+            if (processedCount === filesToProcess.length) {
+              renderImagePreviews();
+              if (!editingItemId) saveFormDraft();
+            }
+          };
+          img.onerror = function() {
+            processedCount++;
+            if (processedCount === filesToProcess.length) {
+              renderImagePreviews();
+              if (!editingItemId) saveFormDraft();
+            }
+          };
+        };
+        reader.readAsDataURL(file);
+      });
+
+      event.target.value = '';
+    }
+
+    function removeImage(index, event) {
+      if (event) event.stopPropagation();
+      currentImages.splice(index, 1);
+      renderImagePreviews();
+      if (!editingItemId) saveFormDraft();
+    }
+
+    function renderImagePreviews() {
+      const container = document.getElementById('preview-container');
+      const grid = document.getElementById('preview-grid');
+      const counter = document.getElementById('img-counter-label');
+
+      grid.innerHTML = '';
+      counter.textContent = `${currentImages.length} / 5 imagens anexadas`;
+
+      if (currentImages.length === 0) {
+        container.style.display = 'none';
+        return;
+      }
+
+      container.style.display = 'flex';
+      currentImages.forEach((imgSrc, idx) => {
+        const thumb = document.createElement('div');
+        thumb.className = 'preview-thumb-box';
+        thumb.onclick = () => openLightbox(imgSrc);
+        thumb.innerHTML = `
+          <img src="${imgSrc}" alt="Imagem ${idx + 1}">
+          <button class="preview-thumb-remove" type="button" onclick="removeImage(${idx}, event)" title="Remover">✕</button>
+        `;
+        grid.appendChild(thumb);
+      });
+    }
+
+    function rolarParaCardNovaCarga() {
+  const card = document.getElementById('form-card');
+  if (!card) return;
+  const alvoTopo = () => Math.max(0, card.getBoundingClientRect().top + window.pageYOffset - 8);
+  // espera o layout terminar de se ajustar (lista re-renderizada, prévias de imagem recolhidas)
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    window.scrollTo({ top: alvoTopo(), behavior: 'smooth' });
+  }));
+  // correção final caso a rolagem suave tenha sido interrompida por mudança de layout
+  setTimeout(() => {
+    if (Math.abs(card.getBoundingClientRect().top - 8) > 6) {
+      window.scrollTo({ top: alvoTopo(), behavior: 'auto' });
+    }
+  }, 700);
+}
+    function salvarRegistro() {
+      const elAtividade = document.getElementById('header-atividade');
+      const elFase = document.getElementById('header-fase-forca-tarefa');
+      const elEstabelecimento = document.getElementById('header-estabelecimento');
+      const elLocal = document.getElementById('header-local');
+      const elData = document.getElementById('header-data');
+      const elRecicladora = document.getElementById('reg-recicladora');
+      const elVeiculo = document.getElementById('reg-veiculo');
+      const elPlaca = document.getElementById('reg-placa');
+      const elChegada = document.getElementById('reg-chegada');
+      const elInicio = document.getElementById('reg-inicio');
+      const elTermino = document.getElementById('reg-termino');
+
+      const atividade = elAtividade.value.trim();
+      const fase = elFase.value.trim();
+      const estabelecimento = elEstabelecimento.value.trim();
+      const local = elLocal.value.trim();
+      const dataHeader = elData.value;
+      const recId = elRecicladora.value;
+      const veicId = elVeiculo.value;
+      const placa = elPlaca.value.trim().toUpperCase();
+      const chegada = elChegada.value;
+      const inicio = elInicio.value;
+      const termino = elTermino.value;
+
+      const exibeFase = document.getElementById('grupo-fase-forca-tarefa').style.display !== 'none';
+      const exibeEndereco = document.getElementById('grupo-endereco').style.display !== 'none';
+
+      if (!dataHeader && !editingParcialId) { mostrarAlertaAviso('DATA OBRIGATÓRIA', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> INFORME A <span class="text-red-600 font-bold">"DATA"</span> ANTES DE CONTINUAR!', elData); return; }
+      if (!atividade) { mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> SELECIONE A <span class="text-red-600 font-bold">"NATUREZA DA ATIVIDADE"</span>!', elAtividade); return; }
+      if (document.getElementById('grupo-apoio').style.display !== 'none' && !document.getElementById('header-apoio').value.trim()) { mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> PREENCHA O CAMPO <span class="text-red-600 font-bold">"APOIO À"</span>!', document.getElementById('header-apoio')); return; }
+      if (exibeFase && !fase) { mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> PREENCHA A <span class="text-red-600 font-bold">"FASE DA FORÇA TAREFA"</span>!', elFase); return; }
+      if (!estabelecimento) { mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> PREENCHA A <span class="text-red-600 font-bold">"EMPRESA / ESTABELECIMENTO"</span>!', elEstabelecimento); return; }
+      if (exibeEndereco && !local) { mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> PREENCHA O <span class="text-red-600 font-bold">"ENDEREÇO"</span>!', elLocal); return; }
+      if (!recId) { mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> SELECIONE A <span class="text-red-600 font-bold">"RECICLADORA"</span>!', elRecicladora); return; }
+      if (!veicId) { mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> SELECIONE O <span class="text-red-600 font-bold">"TIPO DE VEÍCULO"</span>!', elVeiculo); return; }
+      if (!placa) { mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> INFORME A <span class="text-red-600 font-bold">"PLACA DO VEÍCULO"</span>!', elPlaca); return; }
+      if (!chegada) { mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> INFORME O <span class="text-red-600 font-bold">"HORÁRIO DE CHEGADA"</span>!', elChegada); return; }
+      if (!inicio) { mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> INFORME O <span class="text-red-600 font-bold">"INÍCIO DO RECOLHIMENTO"</span>!', elInicio); return; }
+      if (!termino) { mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> INFORME O <span class="text-red-600 font-bold">"TÉRMINO DO RECOLHIMENTO"</span>!', elTermino); return; }
+      if (currentImages.length === 0) { mostrarAlertaAviso('IMAGENS FALTANDO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> ADICIONE AO MENOS <span class="text-red-600 font-bold">1 IMAGEM</span> DA CARGA / VEÍCULO!', document.getElementById('preview-container').parentElement); return; }
+
+      const objRec = recicladoras.find(r => r.id === recId);
+      const objVeic = tiposVeiculos.find(v => v.id === veicId);
+
+      if (editingItemId && editingParcialId) {
+        const parcialEdit = relatoriosParciais.find(p => p.id === editingParcialId);
+        const cargaEdit = parcialEdit ? parcialEdit.cargas.find(c => c.id === editingItemId) : null;
+        if (cargaEdit) {
+          cargaEdit.recicladora = objRec ? objRec.nome.toUpperCase() : 'N/A';
+          cargaEdit.tipoVeiculo = objVeic ? objVeic.nome.toUpperCase() : 'N/A';
+          cargaEdit.placa = placa;
+          cargaEdit.chegada = chegada;
+          cargaEdit.inicio = inicio;
+          cargaEdit.termino = termino;
+          cargaEdit.imagens = [...currentImages];
+          try {
+            Armazem.ls.setItem(STORAGE_KEYS.PARCIAIS, JSON.stringify(relatoriosParciais));
+          } catch (e) {
+            mostrarAlertaAviso('MEMÓRIA CHEIA', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> O SEU NAVEGADOR ESTÁ SEM ESPAÇO NA MEMÓRIA.');
+            return;
+          }
+        }
+        renderRelatoriosParciais();
+        resetFormState();
+        loadFormDraft();
+        validarEstadoBotoesData();
+        const secParcial = document.getElementById('secao-relatorio-parcial');
+        if (secParcial) secParcial.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      }
+
+      if (editingItemId) {
+        const index = registros.findIndex(r => r.id === editingItemId);
+        if (index !== -1) {
+          registros[index].recicladora = objRec ? objRec.nome.toUpperCase() : 'N/A';
+          registros[index].tipoVeiculo = objVeic ? objVeic.nome.toUpperCase() : 'N/A';
+          registros[index].placa = placa;
+          registros[index].chegada = chegada;
+          registros[index].inicio = inicio;
+          registros[index].termino = termino;
+          registros[index].imagens = [...currentImages];
+          registros[index].data = dataHeader;
+        }
+      } else {
+        const novaCarga = {
+          id: Date.now(),
+          data: dataHeader,
+          recicladora: objRec ? objRec.nome.toUpperCase() : 'N/A',
+          tipoVeiculo: objVeic ? objVeic.nome.toUpperCase() : 'N/A',
+          placa: placa,
+          chegada: chegada,
+          inicio: inicio,
+          termino: termino,
+          imagens: [...currentImages]
+        };
+        registros.push(novaCarga);
+      }
+
+      try {
+        Armazem.ls.setItem(STORAGE_KEYS.REGISTROS, JSON.stringify(registros));
+      } catch (e) {
+          mostrarAlertaAviso('MEMÓRIA CHEIA', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> O SEU NAVEGADOR ESTÁ SEM ESPAÇO NA MEMÓRIA.');
+          return;
+      }
+
+      renderRegistros();
+      resetFormState();
+      loadFormDraft();
+      validarEstadoBotoesData();
+      
+      rolarParaCardNovaCarga();
+    }
+
+    function editarRegistro(id) {
+      const item = registros.find(r => r.id === id);
+      if (!item) return;
+
+      editingItemId = id;
+      editingParcialId = null;
+      document.getElementById('form-section-title').textContent = `EDITAR CARGA (#${registros.findIndex(r => r.id === id) + 1})`;
+      document.getElementById('btn-cancel-edit').style.display = 'block';
+      document.getElementById('btn-salvar').textContent = 'ATUALIZAR';
+
+      const objRec = recicladoras.find(r => r.nome.toUpperCase() === item.recicladora);
+      document.getElementById('reg-recicladora').value = objRec ? objRec.id : '';
+
+      const objVeic = tiposVeiculos.find(v => v.nome.toUpperCase() === item.tipoVeiculo);
+      document.getElementById('reg-veiculo').value = objVeic ? objVeic.id : '';
+
+      document.getElementById('reg-placa').value = item.placa;
+      document.getElementById('reg-chegada').value = item.chegada;
+      document.getElementById('reg-inicio').value = item.inicio;
+      document.getElementById('reg-termino').value = item.termino;
+
+      currentImages = item.imagens ? [...item.imagens] : [];
+      renderImagePreviews();
+
+      document.getElementById('form-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function renderRegistros() {
+      const container = document.getElementById('items-list');
+      const dataHeader = document.getElementById('header-data').value;
+      const dataBR = dataHeader ? dataHeader.split('-').reverse().join('/') : 'NÃO DEFINIDA';
+      document.getElementById('titulo-cargas-corrente').textContent = `CARGAS LANÇADAS NA DATA ATUAL (${dataBR})`;
+
+      container.innerHTML = '';
+
+      if (registros.length === 0) {
+        container.innerHTML = `<div class="pdf-empty-state">NENHUMA CARGA LANÇADA NESTA DATA</div>`;
+        return;
+      }
+
+      registros.forEach((item, index) => {
+        const itemImages = item.imagens || [];
+        let imagesHTML = '<div class="images-grid">';
+        itemImages.forEach((img, i) => {
+          imagesHTML += `<img src="${img}" class="item-image" alt="Foto ${i + 1}" onclick="openLightbox('${img}')" title="Clique para ampliar">`;
+        });
+        imagesHTML += '</div>';
+
+        const itemCard = document.createElement('div');
+        itemCard.className = 'item-card';
+        itemCard.innerHTML = `
+          <div class="item-header">
+            <span>#${String(index + 1).padStart(2, '0')} - CARGA</span>
+            <div class="item-actions-group">
+              <button class="btn-icon" onclick="editarRegistro(${item.id})" title="Editar">✏️</button>
+              <button class="btn-icon" onclick="excluirRegistro(${item.id})" title="Excluir">🗑️</button>
+            </div>
+          </div>
+          <div class="item-body">
+            <div class="item-details">
+              <div class="detail-group">
+                <label>RECICLADORA</label>
+                <div>${item.recicladora}</div>
+              </div>
+              <div class="detail-group">
+                <label>TIPO VEÍCULO</label>
+                <div>${item.tipoVeiculo}</div>
+              </div>
+              <div class="detail-group">
+                <label>PLACA</label>
+                <div><span class="badge-plate">${item.placa}</span></div>
+              </div>
+              <div class="detail-group">
+                <label>CHEGADA</label>
+                <div>${item.chegada}</div>
+              </div>
+              <div class="detail-group">
+                <label>INÍCIO DO RECOLHIMENTO</label>
+                <div>${item.inicio}</div>
+              </div>
+              <div class="detail-group">
+                <label>TÉRMINO DO RECOLHIMENTO</label>
+                <div>${item.termino}</div>
+              </div>
+            </div>
+            <div>${imagesHTML}</div>
+          </div>
+        `;
+        container.appendChild(itemCard);
+      });
+    }
+
+    function excluirRegistro(id) {
+      if (editingItemId === id) {
+        resetFormState();
+        loadFormDraft();
+      }
+      Swal.fire({
+        title: 'EXCLUIR CARGA?',
+        html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> ESTA AÇÃO <span class="text-red-500 font-bold">NÃO PODERÁ SER DESFEITA </span>.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#000000',
+        confirmButtonText: 'EXCLUIR',
+        cancelButtonText: 'CANCELAR'
+      }).then((result) => {
+        if (result.isConfirmed) {
+          registros = registros.filter(r => r.id !== id);
+          try {
+            Armazem.ls.setItem(STORAGE_KEYS.REGISTROS, JSON.stringify(registros));
+          } catch (_) {}
+          renderRegistros();
+          validarEstadoBotoesData();
+          Swal.fire({
+            icon: 'success',
+            title: 'EXCLUÍDO!',
+            html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> O REGISTRO DE CARGA FOI EXCLUÍDO.',
+            timer: 1400,
+            showConfirmButton: false
+          });
+        }
+      });
+    }
+
+    function salvarRelatorioParcial() {
+      const dataEl = document.getElementById('header-data');
+      const dataVal = dataEl.value;
+
+      if (!dataVal) {
+        mostrarAlertaAviso('DATA OBRIGATÓRIA', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> SELECIONE UMA DATA NO CABEÇALHO PARA SALVAR O RELATÓRIO PARCIAL!', dataEl);
+        return;
+      }
+
+      if (registros.length === 0) {
+        mostrarAlertaAviso('NENHUMA CARGA', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> CADASTRE AO MENOS UMA CARGA ANTES DE SALVAR O RELATÓRIO PARCIAL.', document.getElementById('form-card'));
+        return;
+      }
+
+      const dataBR = dataVal.split('-').reverse().join('/');
+
+      const indexExistente = relatoriosParciais.findIndex(p => p.data === dataVal);
+      if (indexExistente !== -1) {
+        relatoriosParciais[indexExistente].cargas = [...relatoriosParciais[indexExistente].cargas, ...registros];
+      } else {
+        relatoriosParciais.push({
+          id: Date.now(),
+          data: dataVal,
+          dataBR: dataBR,
+          cargas: [...registros]
+        });
+      }
+
+      try {
+        Armazem.ls.setItem(STORAGE_KEYS.PARCIAIS, JSON.stringify(relatoriosParciais));
+      } catch (e) {
+        mostrarAlertaAviso('MEMÓRIA CHEIA', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> O ESPAÇO DO NAVEGADOR ESTÁ <span class="text-red-500 font-bold">CHEIO</span> PARA NOVOS RELATÓRIOS.');
+        return;
+      }
+
+      registros = [];
+      Armazem.ls.removeItem(STORAGE_KEYS.REGISTROS);
+      renderRegistros();
+
+      dataEl.value = '';
+      saveHeaderData();
+      validarEstadoBotoesData();
+      renderRelatoriosParciais();
+
+      Swal.fire({
+        icon: 'success',
+        title: 'RELATÓRIO PARCIAL SALVO!',
+        html: `<span class="text-amber-500 font-bold">ATENÇÃO:</span> AS CARGAS DO DIA <b>${dataBR}</b> FORAM ADICIONADAS AO RELATÓRIO PARCIAL.<br><br>SELECIONE UMA <span class="text-red-500 font-bold">NOVA DATA</span> PARA CONTINUAR REGISTRANDO AS CARGAS.`,
+        confirmButtonColor: '#000000'
+      });
+    }
+
+    function montarCardCarga(item, index, acoesHTML) {
+      const itemImages = item.imagens || [];
+      let imagesHTML = '<div class="images-grid">';
+      itemImages.forEach((img, i) => {
+        imagesHTML += `<img src="${img}" class="item-image" alt="Foto ${i + 1}" onclick="openLightbox('${img}')" title="Clique para ampliar">`;
+      });
+      imagesHTML += '</div>';
+
+      return `
+        <div class="item-card">
+          <div class="item-header">
+            <span>#${String(index + 1).padStart(2, '0')} - CARGA</span>
+            <div class="item-actions-group">${acoesHTML}</div>
+          </div>
+          <div class="item-body">
+            <div class="item-details">
+              <div class="detail-group">
+                <label>RECICLADORA</label>
+                <div>${item.recicladora}</div>
+              </div>
+              <div class="detail-group">
+                <label>TIPO VEÍCULO</label>
+                <div>${item.tipoVeiculo}</div>
+              </div>
+              <div class="detail-group">
+                <label>PLACA</label>
+                <div><span class="badge-plate">${item.placa}</span></div>
+              </div>
+              <div class="detail-group">
+                <label>CHEGADA</label>
+                <div>${item.chegada}</div>
+              </div>
+              <div class="detail-group">
+                <label>INÍCIO DO RECOLHIMENTO</label>
+                <div>${item.inicio}</div>
+              </div>
+              <div class="detail-group">
+                <label>TÉRMINO DO RECOLHIMENTO</label>
+                <div>${item.termino}</div>
+              </div>
+            </div>
+            <div>${imagesHTML}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderRelatoriosParciais() {
+      const container = document.getElementById('container-relatorio-parcial');
+      if (!container) return;
+
+      if (relatoriosParciais.length === 0) {
+        container.innerHTML = `<div class="pdf-empty-state">NENHUM RELATÓRIO PARCIAL REGISTRADO AINDA</div>`;
+        return;
+      }
+
+      relatoriosParciais.sort((a, b) => new Date(a.data) - new Date(b.data));
+
+      container.innerHTML = relatoriosParciais.map(parcial => `
+        <div class="partial-day-block">
+          <div class="partial-day-header">
+            <span class="partial-day-title">📅 DATA: ${parcial.dataBR} (${parcial.cargas.length} CARGA(S))</span>
+            <button class="btn-sm btn-danger-outline" onclick="excluirRelatorioParcial(${parcial.id})" title="Excluir este dia do parcial">🗑️ EXCLUIR DIA</button>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 16px;">
+            ${parcial.cargas.map((c, i) => montarCardCarga(c, i, `<button class="btn-icon" onclick="editarCargaParcial(${parcial.id}, ${c.id})" title="Editar">✏️</button>`)).join('')}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function editarCargaParcial(parcialId, cargaId) {
+      const parcial = relatoriosParciais.find(p => p.id === parcialId);
+      if (!parcial) return;
+      const item = parcial.cargas.find(c => c.id === cargaId);
+      if (!item) return;
+
+      editingItemId = cargaId;
+      editingParcialId = parcialId;
+      document.getElementById('form-section-title').textContent = `EDITAR CARGA PARCIAL (${parcial.dataBR} - #${parcial.cargas.findIndex(c => c.id === cargaId) + 1})`;
+      document.getElementById('btn-cancel-edit').style.display = 'block';
+      document.getElementById('btn-salvar').textContent = 'ATUALIZAR';
+
+      const objRec = recicladoras.find(r => r.nome.toUpperCase() === item.recicladora);
+      document.getElementById('reg-recicladora').value = objRec ? objRec.id : '';
+
+      const objVeic = tiposVeiculos.find(v => v.nome.toUpperCase() === item.tipoVeiculo);
+      document.getElementById('reg-veiculo').value = objVeic ? objVeic.id : '';
+
+      document.getElementById('reg-placa').value = item.placa;
+      document.getElementById('reg-chegada').value = item.chegada;
+      document.getElementById('reg-inicio').value = item.inicio;
+      document.getElementById('reg-termino').value = item.termino;
+
+      currentImages = item.imagens ? [...item.imagens] : [];
+      renderImagePreviews();
+
+      document.getElementById('form-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function excluirRelatorioParcial(id) {
+      Swal.fire({
+        title: 'EXCLUIR PARCIAL?',
+        html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> DESEJA REALMENTE <span class="text-red-500 font-bold">EXCLUIR AS CARGAS ARQUIVADAS</span> DESTE DIA?',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#000000',
+        confirmButtonText: 'EXCLUIR',
+        cancelButtonText: 'CANCELAR'
+      }).then((result) => {
+        if (result.isConfirmed) {
+          relatoriosParciais = relatoriosParciais.filter(p => p.id !== id);
+          if (editingParcialId === id) {
+            resetFormState();
+            loadFormDraft();
+          }
+          try {
+            Armazem.ls.setItem(STORAGE_KEYS.PARCIAIS, JSON.stringify(relatoriosParciais));
+          } catch (_) {}
+          renderRelatoriosParciais();
+          validarEstadoBotoesData();
+          Swal.fire({
+            icon: 'success',
+            title: 'EXCLUÍDO!',
+            html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> O LOTE PARCIAL FOI REMOVIDO.',
+            timer: 1300,
+            showConfirmButton: false
+          });
+        }
+      });
+    }
+
+    function obterTodasAsCargasOrdenadas() {
+      const agrupadosPorData = {};
+
+      relatoriosParciais.forEach(parcial => {
+        if (!agrupadosPorData[parcial.data]) {
+          agrupadosPorData[parcial.data] = [];
+        }
+        agrupadosPorData[parcial.data].push(...parcial.cargas);
+      });
+
+      const dataAtual = document.getElementById('header-data').value;
+      if (dataAtual && registros.length > 0) {
+        if (!agrupadosPorData[dataAtual]) {
+          agrupadosPorData[dataAtual] = [];
+        }
+        agrupadosPorData[dataAtual].push(...registros);
+      }
+
+      const datasOrdenadas = Object.keys(agrupadosPorData).sort((a, b) => new Date(a) - new Date(b));
+
+      return { agrupadosPorData, datasOrdenadas };
+    }
+
+    function rolarParaTopoAposLimpar() {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        // correção de segurança caso a rolagem suave seja interrompida pela mudança de layout
+        setTimeout(() => {
+            if (window.pageYOffset > 2) window.scrollTo({ top: 0, behavior: 'auto' });
+        }, 1200);
+    }
+
+        function limparTabela() {
+      Swal.fire({
+        title: 'TEM CERTEZA?',
+        html: "<span class='text-amber-500 font-bold'>ATENÇÃO:  </span> ISTO IRÁ <span class='text-red-500 font-bold'> 'APAGAR' TODOS OS CAMPOS PREENCHIDOS NA PÁGINA E O RELATÓRIO PARCIAL, SE HOUVER </span>!",
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#000000',
+        confirmButtonText: 'OK',
+        cancelButtonText: 'CANCELAR',
+        returnFocus: false,
+        didClose: () => {
+            if (window.foiConfirmadoLimpar) {
+                window.foiConfirmadoLimpar = false;
+                setTimeout(() => { rolarParaTopoAposLimpar(); }, 100);
+            }
+        }
+      }).then((result) => {
+        if (result.isConfirmed) {
+            window.foiConfirmadoLimpar = true;
+          registros = [];
+          relatoriosParciais = [];
+          Armazem.ls.removeItem(STORAGE_KEYS.REGISTROS);
+          Armazem.ls.removeItem(STORAGE_KEYS.PARCIAIS);
+          
+          document.getElementById('header-atividade').value = '';
+          document.getElementById('header-fase-forca-tarefa').value = '';
+          document.getElementById('header-estabelecimento').value = '';
+          document.getElementById('header-local').value = '';
+          document.getElementById('header-apoio').value = '';
+          document.getElementById('header-data').value = '';
+          
+          atualizarCamposNatureza();
+          saveHeaderData();
+          resetFormState();
+          loadFormDraft();
+          renderRegistros();
+          renderRelatoriosParciais();
+          validarEstadoBotoesData();
+          
+        }
+      });
+    }
+
+    function validarGeracaoPDF() {
+      const elAtividade = document.getElementById('header-atividade');
+      const elFase = document.getElementById('header-fase-forca-tarefa');
+      const elEstabelecimento = document.getElementById('header-estabelecimento');
+      const elLocal = document.getElementById('header-local');
+      const exibeFase = document.getElementById('grupo-fase-forca-tarefa').style.display !== 'none';
+      const exibeEndereco = document.getElementById('grupo-endereco').style.display !== 'none';
+      const { datasOrdenadas } = obterTodasAsCargasOrdenadas();
+
+      if (!elAtividade.value.trim()) { mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> SELECIONE A <span class="text-red-600 font-bold">"NATUREZA DA ATIVIDADE"</span>!', elAtividade); return false; }
+      if (document.getElementById('grupo-apoio').style.display !== 'none' && !document.getElementById('header-apoio').value.trim()) { mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> PREENCHA O CAMPO <span class="text-red-600 font-bold">"APOIO À"</span>!', document.getElementById('header-apoio')); return false; }
+      if (exibeFase && !elFase.value.trim()) { mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> PREENCHA A <span class="text-red-600 font-bold">"FASE DA FORÇA TAREFA"</span>!', elFase); return false; }
+      if (!elEstabelecimento.value.trim()) { mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> PREENCHA O <span class="text-red-600 font-bold">"EMPRESA / ESTABELECIMENTO"</span>!', elEstabelecimento); return false; }
+      if (exibeEndereco && !elLocal.value.trim()) { mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> PREENCHA O <span class="text-red-600 font-bold">"ENDEREÇO"</span>!', elLocal); return false; }
+      const elDataHeader = document.getElementById('header-data');
+      if (registros.length > 0 && !elDataHeader.value) { mostrarAlertaAviso('DATA OBRIGATÓRIA', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> INFORME A <span class="text-red-600 font-bold">"DATA DA OPERAÇÃO / CARGA"</span> DAS CARGAS LANÇADAS NA TELA!', elDataHeader); return false; }
+
+      if (datasOrdenadas.length === 0) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'NENHUMA CARGA REGISTRADA',
+          html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> NÃO HÁ <span class="text-red-500 font-bold">CARGAS NO RELATÓRIO PARCIAL NEM NA TELA ATUAL</span> PARA GERAR O PDF.',
+          confirmButtonColor: '#000000'
+        });
+        return false;
+      }
+
+      return true;
+    }
+
+    function obterBrasaoBase64() {
+        return new Promise((resolve) => {
+            try {
+                const imgNode = document.querySelector('.header-logo');
+                if (imgNode && imgNode.complete && imgNode.naturalWidth > 0) {
+                    const maxDim = 180;
+                    let w = imgNode.naturalWidth;
+                    let h = imgNode.naturalHeight;
+                    if (w > maxDim || h > maxDim) {
+                        if (w > h) {
+                            h = Math.round((h * maxDim) / w);
+                            w = maxDim;
+                        } else {
+                            w = Math.round((w * maxDim) / h);
+                            h = maxDim;
+                        }
+                    }
+                    const canvas = document.createElement('canvas');
+                    canvas.width = w;
+                    canvas.height = h;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(imgNode, 0, 0, w, h);
+                    resolve({ data: canvas.toDataURL('image/png'), format: 'PNG' });
+                } else {
+                    resolve(null);
+                }
+            } catch (e) {
+                resolve(null);
+            }
+        });
+    }
+
+    function otimizarImagemParaPDF(imgSrc, maxDim = 380, quality = 0.65) {
+      return new Promise((resolve) => {
+        if (!imgSrc) return resolve(null);
+        if (imgSrc.startsWith('data:image/jpeg') && imgSrc.length < 60000) {
+          return resolve(imgSrc);
+        }
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          let w = img.width;
+          let h = img.height;
+          if (w > maxDim || h > maxDim) {
+            if (w > h) {
+              h = Math.round((h * maxDim) / w);
+              w = maxDim;
+            } else {
+              w = Math.round((w * maxDim) / h);
+              h = maxDim;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, w, h);
+          ctx.drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        };
+        img.onerror = () => resolve(imgSrc);
+        img.src = imgSrc;
+      });
+    }
+
+    function limparAposGeracao() {
+      registros = [];
+      relatoriosParciais = [];
+      Armazem.ls.removeItem(STORAGE_KEYS.REGISTROS);
+      Armazem.ls.removeItem(STORAGE_KEYS.PARCIAIS);
+      document.getElementById('header-atividade').value = '';
+      document.getElementById('header-fase-forca-tarefa').value = '';
+      document.getElementById('header-estabelecimento').value = '';
+      document.getElementById('header-local').value = '';
+      document.getElementById('header-apoio').value = '';
+      document.getElementById('header-data').value = '';
+      atualizarCamposNatureza();
+      saveHeaderData();
+      resetFormState();
+      loadFormDraft();
+      renderRegistros();
+      renderRelatoriosParciais();
+      validarEstadoBotoesData();
+      setTimeout(() => {
+        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+      }, 100);
+    }
+
+    async function gerarPDFPersonalizado() {
+        if (!validarGeracaoPDF()) return;
+
+        const atividade = document.getElementById('header-atividade').value.trim();
+        const fase = document.getElementById('header-fase-forca-tarefa').value.trim();
+        const estabelecimento = document.getElementById('header-estabelecimento').value.trim();
+        const local = document.getElementById('header-local').value.trim();
+        const apoio = document.getElementById('header-apoio').value.trim();
+        const exibeFase = document.getElementById('grupo-fase-forca-tarefa').style.display !== 'none';
+        const exibeEndereco = document.getElementById('grupo-endereco').style.display !== 'none';
+        const { agrupadosPorData, datasOrdenadas } = obterTodasAsCargasOrdenadas();
+
+        const cleanAtividade = atividade.replace(/[\/\\\\:*?"<>|]/g, '-');
+        const cleanEstabelecimento = estabelecimento.replace(/[\/\\\\:*?"<>|]/g, '-');
+        const dataInicioBR = datasOrdenadas[0].split('-').reverse().join('-');
+        const dataFimBR = datasOrdenadas[datasOrdenadas.length - 1].split('-').reverse().join('-');
+        const periodoStr = datasOrdenadas.length > 1 ? `${dataInicioBR}_A_${dataFimBR}` : dataInicioBR;
+        
+        const isForcaTarefa = normalizarTexto(atividade).includes('FORCA TAREFA');
+        const faseNoNome = (isForcaTarefa && fase) ? ` - FASE ${fase.toUpperCase()}` : '';
+        const nomeArquivo = `CONTROLE DE CARGAS - ${cleanAtividade.toUpperCase()}${faseNoNome} - ${cleanEstabelecimento.toUpperCase()} - ${periodoStr}.pdf`;
+
+        Swal.fire({
+            title: 'GERANDO PDF...',
+            html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> AGUARDE A CRIAÇÃO E SALVAMENTO DO DOCUMENTO OFICIAL.',
+            allowOutsideClick: false,
+            didOpen: () => { Swal.showLoading(); }
+        });
+
+        try {
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF({
+                orientation: 'p',
+                unit: 'mm',
+                format: 'a4',
+                compress: true
+            });
+
+            const pageWidth = pdf.internal.pageSize.getWidth();
+            const pageHeight = pdf.internal.pageSize.getHeight();
+            const marginX = 14;
+            const cardWidth = pageWidth - (marginX * 2);
+            let curY = 10;
+
+            const logoInfo = await obterBrasaoBase64();
+            if (logoInfo && logoInfo.data) {
+                pdf.addImage(logoInfo.data, logoInfo.format, pageWidth / 2 - 12, curY, 24, 24, undefined, 'FAST');
+                curY += 32; 
+            } else {
+                curY += 10;
+            }
+
+            pdf.setFont('helvetica', 'bold');
+            pdf.setFontSize(12);
+            pdf.setTextColor(0, 0, 0);
+            pdf.text('GOVERNO DO ESTADO DO RIO DE JANEIRO', pageWidth / 2, curY, { align: 'center' });
+            curY += 5.5;
+            pdf.setFontSize(10);
+            pdf.text('DEPARTAMENTO DE TRÂNSITO DO ESTADO DO RIO DE JANEIRO - DETRAN.RJ', pageWidth / 2, curY, { align: 'center' });
+            curY += 5.5;
+            pdf.setFont('helvetica', 'normal');
+            pdf.setFontSize(9);
+            pdf.text('DIRETORIA GERAL DAS ATIVIDADES DE DESMONTAGEM', pageWidth / 2, curY, { align: 'center' });
+            curY += 5.5;
+            pdf.setFont('helvetica', 'normal');
+            pdf.setFontSize(9);
+            pdf.text('DIVISÃO DE FISCALIZAÇÃO', pageWidth / 2, curY, { align: 'center' });
+            curY += 10;
+
+            const drawInfoBox = (x, yPos, w, label, value) => {
+                pdf.setFillColor(249, 250, 251); 
+                pdf.setDrawColor(220, 220, 220);
+                pdf.roundedRect(x, yPos, w, 11, 1.5, 1.5, 'FD');
+                
+                pdf.setFontSize(7);
+                pdf.setTextColor(100, 100, 100); 
+                pdf.setFont('helvetica', 'bold');
+                pdf.text(label, x + 3, yPos + 4);
+                
+                pdf.setFontSize(9);
+                pdf.setTextColor(0, 0, 0);
+                pdf.setFont('helvetica', 'normal');
+                pdf.text(value, x + 3, yPos + 9);
+            };
+
+            drawInfoBox(marginX, curY, cardWidth, 'NATUREZA DA ATIVIDADE:', atividade.toUpperCase());
+            curY += 13;
+            if (document.getElementById('grupo-apoio').style.display !== 'none') {
+                drawInfoBox(marginX, curY, cardWidth, 'APOIO À:', apoio.toUpperCase());
+                curY += 13;
+            }
+            if (exibeFase) {
+                drawInfoBox(marginX, curY, cardWidth, 'FASE DA FORÇA TAREFA:', fase.toUpperCase());
+                curY += 13;
+            }
+            drawInfoBox(marginX, curY, cardWidth, 'ESTABELECIMENTO:', estabelecimento.toUpperCase());
+            curY += 13;
+            if (exibeEndereco) {
+                drawInfoBox(marginX, curY, cardWidth, 'ENDEREÇO:', local.toUpperCase());
+                curY += 13;
+            }
+            const periodoExibicao = datasOrdenadas.length > 1 ? `${datasOrdenadas[0].split('-').reverse().join('/')} A ${datasOrdenadas[datasOrdenadas.length - 1].split('-').reverse().join('/')}` : datasOrdenadas[0].split('-').reverse().join('/');
+            drawInfoBox(marginX, curY, cardWidth, 'PERÍODO / DATAS:', periodoExibicao);
+            curY += 18;
+
+            pdf.setFont('helvetica', 'bold');
+            pdf.setFontSize(11);
+            pdf.setTextColor(0, 0, 0);
+            pdf.text('RELATÓRIO DE CONTROLE DE CARGAS', pageWidth / 2, curY, { align: 'center' });
+            curY += 7;
+
+            const imgWidth = 31;
+            const imgHeight = 31;
+            const gapX = 2.2;
+
+            let globalCargaIndex = 1;
+            let cargasNaPaginaAtual = 0;
+
+            for (const dataKey of datasOrdenadas) {
+                const cargasDoDia = agrupadosPorData[dataKey];
+                const dataFormatadaBR = dataKey.split('-').reverse().join('/');
+
+                if (curY + 12 > pageHeight - 15) {
+                    pdf.addPage();
+                    curY = 10;
+                    cargasNaPaginaAtual = 0;
+                }
+
+                pdf.setFillColor(30, 58, 138);
+                pdf.rect(marginX, curY, cardWidth, 6.5, 'F');
+                pdf.setFont('helvetica', 'bold');
+                pdf.setFontSize(8.5);
+                pdf.setTextColor(255, 255, 255);
+                pdf.text(`DATA DA OPERAÇÃO: ${dataFormatadaBR} (${cargasDoDia.length} CARGA(S))`, marginX + 3, curY + 4.6);
+                curY += 8.5;
+
+                for (let i = 0; i < cargasDoDia.length; i++) {
+                    const carga = cargasDoDia[i];
+                    const imgs = carga.imagens || [];
+
+                    const limiteAtual = (pdf.internal.getNumberOfPages() === 1) ? 2 : 4;
+                    if (cargasNaPaginaAtual >= limiteAtual) {
+                        pdf.addPage();
+                        curY = 10;
+                        cargasNaPaginaAtual = 0;
+                    }
+
+                    const cardStartY = curY;
+
+                    pdf.setFillColor(31, 41, 55);
+                    pdf.rect(marginX, curY, cardWidth, 7.5, 'F');
+                    pdf.setFont('helvetica', 'bold');
+                    pdf.setFontSize(8.5);
+                    pdf.setTextColor(255, 255, 255);
+                    pdf.text(`CARGA #${String(globalCargaIndex).padStart(2, '0')} - DATA: ${dataFormatadaBR}`, marginX + 3, curY + 5.2);
+                    curY += 7.5;
+
+                    pdf.setFillColor(250, 250, 250);
+                    pdf.setDrawColor(225, 225, 225);
+                    pdf.rect(marginX, curY, cardWidth, 10.5, 'FD');
+
+                    pdf.setTextColor(110, 110, 110);
+                    pdf.setFont('helvetica', 'bold');
+                    pdf.setFontSize(6.5);
+                    pdf.text('RECICLADORA:', marginX + 3, curY + 4);
+                    pdf.text('TIPO DE VEÍCULO:', marginX + 80, curY + 4);
+                    pdf.text('PLACA:', marginX + 145, curY + 4);
+
+                    pdf.setTextColor(17, 24, 39);
+                    pdf.setFont('helvetica', 'normal');
+                    pdf.setFontSize(8);
+                    pdf.text(carga.recicladora || 'N/A', marginX + 3, curY + 8.2);
+                    pdf.text(carga.tipoVeiculo || 'N/A', marginX + 80, curY + 8.2);
+                    pdf.setFont('helvetica', 'bold');
+                    pdf.text(carga.placa || 'N/A', marginX + 145, curY + 8.2);
+                    curY += 10.5;
+
+                    pdf.setFillColor(255, 255, 255);
+                    pdf.setDrawColor(225, 225, 225);
+                    pdf.rect(marginX, curY, cardWidth, 10.5, 'FD');
+
+                    pdf.setTextColor(110, 110, 110);
+                    pdf.setFont('helvetica', 'bold');
+                    pdf.setFontSize(6.5);
+                    pdf.text('HORÁRIO DE CHEGADA:', marginX + 3, curY + 4);
+                    pdf.text('INÍCIO DO RECOLHIMENTO:', marginX + 65, curY + 4);
+                    pdf.text('TÉRMINO DO RECOLHIMENTO:', marginX + 125, curY + 4);
+
+                    pdf.setTextColor(17, 24, 39);
+                    pdf.setFont('helvetica', 'normal');
+                    pdf.setFontSize(8.5);
+                    pdf.text(carga.chegada || '--:--', marginX + 3, curY + 8.2);
+                    pdf.text(carga.inicio || '--:--', marginX + 65, curY + 8.2);
+                    pdf.text(carga.termino || '--:--', marginX + 125, curY + 8.2);
+                    curY += 10.5;
+
+                    if (imgs.length > 0) {
+                        curY += 3;
+                        let currentX = marginX + 3;
+                        let imgRowStartY = curY;
+
+                        for (let j = 0; j < imgs.length; j++) {
+                            try {
+                                const imgOtimizada = await otimizarImagemParaPDF(imgs[j]);
+                                pdf.setDrawColor(215, 215, 215);
+                                pdf.rect(currentX, imgRowStartY, imgWidth, imgHeight);
+                                if (imgOtimizada) {
+                                    pdf.addImage(imgOtimizada, 'JPEG', currentX + 0.5, imgRowStartY + 0.5, imgWidth - 1, imgHeight - 1, undefined, 'FAST');
+                                }
+                            } catch(e) {
+                                console.warn("Erro ao renderizar imagem.", e);
+                            }
+                            currentX += imgWidth + gapX;
+                        }
+                        curY = imgRowStartY + imgHeight + 4;
+                    } else {
+                        pdf.setFont('helvetica', 'italic');
+                        pdf.setFontSize(7.5);
+                        pdf.setTextColor(150, 150, 150);
+                        pdf.text('Nenhuma imagem anexada.', marginX + 3, curY + 5.5);
+                        curY += 8.5;
+                    }
+
+                    const finalCardHeight = curY - cardStartY;
+                    pdf.setDrawColor(180, 185, 195);
+                    pdf.setLineWidth(0.35);
+                    pdf.rect(marginX, cardStartY, cardWidth, finalCardHeight, 'S');
+
+                    curY += 2;
+                    globalCargaIndex++;
+                    cargasNaPaginaAtual++;
+                }
+                curY += 3;
+            }
+
+            const pdfBlob = pdf.output('blob');
+            const pdfDataUri = pdf.output('datauristring');
+
+            await salvarPDFHistorico({
+                id: Date.now().toString(),
+                nome: nomeArquivo,
+                atividade: cleanAtividade.toUpperCase(),
+                estabelecimento: cleanEstabelecimento.toUpperCase(),
+                fase: isForcaTarefa ? fase.toUpperCase() : '',
+                local: local.toUpperCase(),
+                apoio: document.getElementById('grupo-apoio').style.display !== 'none' ? apoio.toUpperCase() : '',
+                dataFiscalizacao: periodoExibicao,
+                dataGeracao: new Date().toLocaleString('pt-BR'),
+                timestamp: Date.now(),
+                blob: pdfBlob,
+                dataUri: pdfDataUri
+            });
+
+            const foiCompartilhado = await compartilharPDFGeradoWhatsApp(pdfBlob, nomeArquivo);
+
+            Swal.close();
+
+            if (foiCompartilhado) {
+              Swal.fire({
+                  icon: 'success',
+                  title: 'PDF GERADO E COMPARTILHADO!',
+                  html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> O ARQUIVO FOI ADICIONADO AO HISTÓRICO DA PÁGINA.',
+                  confirmButtonColor: '#000000'
+              }).then(() => {
+                  // limparAposGeracao();
+              });
+            } else {
+              Swal.fire({
+                  icon: 'success',
+                  title: 'PDF GERADO COM SUCESSO!',
+                  html: `<span class="text-amber-500 font-bold">ATENÇÃO:</span> O ARQUIVO FOI ADICIONADO AO HISTÓRICO DA PÁGINA.<br><br>
+                         <b>PARA BAIXAR:</b> UTILIZE O BOTÃO "⬇️" NO HISTÓRICO DE PDFs ABAIXO.`,
+                  confirmButtonColor: '#000000'
+              }).then(() => {
+                  // limparAposGeracao();
+              });
+            }
+
+        } catch (error) {
+            console.error('Erro ao gerar PDF:', error);
+            Swal.fire({
+                icon: 'error',
+                title: 'ERRO AO GERAR PDF',
+                html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> OCORREU UM <span class="text-red-500 font-bold">PROBLEMA AO GERAR O CONTROLE DE CARGAS</span>.',
+                confirmButtonColor: '#000000'
+            });
+        }
+    }
+
+    async function compartilharPDFGeradoWhatsApp(blob, nomeArquivo) {
+      const arquivo = new File([blob], nomeArquivo, { type: 'application/pdf' });
+
+      if (navigator.share && navigator.canShare) {
+        try {
+          if (navigator.canShare({ files: [arquivo] })) {
+            await navigator.share({
+              files: [arquivo],
+              title: nomeArquivo,
+              text: 'CONTROLE DE CARGAS'
+            });
+            return true;
+          }
+        } catch (error) {
+          if (error && error.name === 'AbortError') return false;
+        }
+      }
+      return false;
+    }
+
+    function compartilharResumo() {
+      if (!validarGeracaoPDF()) return;
+
+      const atividade = document.getElementById('header-atividade').value.toUpperCase();
+      const fase = document.getElementById('header-fase-forca-tarefa').value.toUpperCase();
+      const estabelecimento = document.getElementById('header-estabelecimento').value.toUpperCase();
+      const local = document.getElementById('header-local').value.toUpperCase();
+      const exibeFase = document.getElementById('grupo-fase-forca-tarefa').style.display !== 'none';
+      const exibeEndereco = document.getElementById('grupo-endereco').style.display !== 'none';
+      const { agrupadosPorData, datasOrdenadas } = obterTodasAsCargasOrdenadas();
+
+      let mensagem = `*RELATÓRIO DE CONTROLE DE CARGAS*\n\n`;
+      mensagem += `🧐 *NATUREZA DA ATIVIDADE:* ${atividade}\n`;
+      if (document.getElementById('grupo-apoio').style.display !== 'none') {
+          mensagem += `🤝 *APOIO À:* ${document.getElementById('header-apoio').value.toUpperCase()}\n`;
+      }
+      if (exibeFase) {
+          mensagem += `🪖 *FASE DA FORÇA TAREFA:* ${fase}\n`;
+      }
+      mensagem += `🏢 *EMPRESA / ESTABELECIMENTO:* ${estabelecimento}\n`;
+      if (exibeEndereco) {
+          mensagem += `📍 *ENDEREÇO:* ${local}\n`;
+      }
+
+      let totalGeral = 0;
+      datasOrdenadas.forEach(d => totalGeral += agrupadosPorData[d].length);
+      mensagem += `🚛 *TOTAL DE CARGAS REGISTRADAS:* ${totalGeral}\n\n`;
+
+      datasOrdenadas.forEach(dataKey => {
+        const cargas = agrupadosPorData[dataKey];
+        const dataBR = dataKey.split('-').reverse().join('/');
+        mensagem += `📅 *DATA: ${dataBR}* (${cargas.length} Cargas)\n`;
+        cargas.forEach((c, idx) => {
+          mensagem += `  *#${idx + 1}.* Recicladora: ${c.recicladora} | Veículo: ${c.tipoVeiculo} | Placa: ${c.placa} | Horário de chegada: ${c.chegada} | Horário de Recolhimento: ${c.inicio} às ${c.termino}\n\n`;
+        });
+        mensagem += `\n\n`;
+      });
+
+      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(mensagem)}`, '_blank');
+    }
+
+    async function salvarPDFHistorico(pdfObj) {
+      try {
+        await dbSalvarPDF(pdfObj);
+        await renderizarGridPDFs();
+      } catch(e) {
+        console.error('Erro ao salvar no histórico:', e);
+      }
+    }
+
+    async function renderizarGridPDFs() {
+      const container = document.getElementById('grid-pdfs-container');
+      if (!container) return;
+
+      const termoBusca = (document.getElementById('busca-pdf')?.value || '').toLowerCase().trim();
+      let historico = await dbObterTodosPDFs();
+
+      historico.sort((a, b) => b.timestamp - a.timestamp);
+
+      if (termoBusca) {
+        historico = historico.filter(item =>
+          (item.nome && item.nome.toLowerCase().includes(termoBusca)) ||
+          (item.atividade && item.atividade.toLowerCase().includes(termoBusca)) ||
+          (item.estabelecimento && item.estabelecimento.toLowerCase().includes(termoBusca)) ||
+          (item.fase && item.fase.toLowerCase().includes(termoBusca)) ||
+          (item.local && item.local.toLowerCase().includes(termoBusca)) ||
+          (item.dataFiscalizacao && item.dataFiscalizacao.toLowerCase().includes(termoBusca)) ||
+          (item.dataGeracao && item.dataGeracao.toLowerCase().includes(termoBusca))
+        );
+      }
+
+      if (historico.length === 0) {
+        container.innerHTML = `<div class="pdf-empty-state">NENHUM PDF ENCONTRADO NO HISTÓRICO</div>`;
+        return;
+      }
+
+      container.innerHTML = historico.map(item => `
+        <div class="pdf-card">
+          <div class="pdf-card-info" onclick="abrirPDF('${item.id}')" title="CLIQUE AQUI PARA ABRIR O PDF">
+            <span class="pdf-card-icon">📄</span>
+            <div class="pdf-card-text">
+              <div class="pdf-card-title" title="${item.nome}">${item.atividade || 'CONTROLE DE CARGAS'}${item.fase ? ' - FASE ' + item.fase : ''}${item.estabelecimento ? ' - ' + item.estabelecimento : ''} - ${item.dataFiscalizacao || (item.dataGeracao || '').split(',')[0]}</div>
+              <div class="pdf-card-meta">GERADO EM: ${item.dataGeracao}</div>
+            </div>
+          </div>
+          <div class="pdf-card-actions">
+            <button class="btn-icon-pdf" onclick="abrirPDF('${item.id}')" title="ABRIR / VISUALIZAR PDF">👁️</button>
+            <button class="btn-icon-pdf" onclick="baixarPDFHistorico('${item.id}')" title="BAIXAR PDF">⬇️</button>
+            <button class="btn-icon-pdf" onclick="excluirPDF('${item.id}')" title="EXCLUIR PDF">🗑️</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function abrirPDF(id) {
+        // Abre a nova aba imediatamente (dentro do clique) para o navegador não bloquear
+        const win = window.open('', '_blank');
+        if (win) {
+            try { win.document.write('<title>PDF</title><p style="font-family:sans-serif;text-align:center;margin-top:40px;">CARREGANDO PDF...</p>'); } catch (_) {}
+        }
+
+        const pdfObj = await dbObterPDFPorId(id);
+        let blob = pdfObj ? pdfObj.blob : null;
+
+        try {
+            if (pdfObj && !blob && pdfObj.dataUri) {
+                const byteString = atob(pdfObj.dataUri.split(',')[1]);
+                const mimeString = pdfObj.dataUri.split(',')[0].split(':')[1].split(';')[0];
+                const ab = new ArrayBuffer(byteString.length);
+                const ia = new Uint8Array(ab);
+                for (let i = 0; i < byteString.length; i++) {
+                    ia[i] = byteString.charCodeAt(i);
+                }
+                blob = new Blob([ab], { type: mimeString || 'application/pdf' });
+            }
+        } catch (e) {
+            console.error('Erro ao preparar PDF:', e);
+        }
+
+        if (blob) {
+            const blobUrl = URL.createObjectURL(blob.type === 'application/pdf' ? blob : new Blob([blob], { type: 'application/pdf' }));
+            if (win) {
+                win.location.href = blobUrl;
+            } else {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'BLOQUEADOR DE POP-UP DETECTADO',
+                    html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> PERMITA POP-UPS PARA ABRIR O PDF SALVO.',
+                    confirmButtonColor: '#000000'
+                });
+            }
+            return;
+        }
+
+        if (win) win.close();
+        Swal.fire({
+            icon: 'error',
+            title: 'NÃO ENCONTRADO',
+            html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> O PDF SELECIONADO <span class="text-red-500 font-bold">NÃO FOI ENCONTRADO</span> NO HISTÓRICO.',
+            confirmButtonColor: '#000000'
+        });
+    }
+
+        function avisarDownloadEAtualizar() {
+        Swal.fire({
+            icon: 'success',
+            title: 'DOWNLOAD INICIADO!',
+            html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> O PDF ESTÁ SENDO BAIXADO. A PÁGINA SERÁ ATUALIZADA.',
+            timer: 1500,
+            timerProgressBar: true,
+            showConfirmButton: false,
+            allowOutsideClick: false,
+            allowEscapeKey: false
+        }).then(() => { window.location.reload(); });
+    }
+
+    async function baixarPDFHistorico(id) {
+      const pdfObj = await dbObterPDFPorId(id);
+      if (!pdfObj) return;
+
+      let blob = pdfObj.blob;
+      if (!blob && pdfObj.dataUri) {
+        const byteString = atob(pdfObj.dataUri.split(',')[1]);
+        const mimeString = pdfObj.dataUri.split(',')[0].split(':')[1].split(';')[0];
+        const ab = new ArrayBuffer(byteString.length);
+        const ia = new Uint8Array(ab);
+        for (let i = 0; i < byteString.length; i++) {
+          ia[i] = byteString.charCodeAt(i);
+        }
+        blob = new Blob([ab], { type: mimeString });
+      }
+
+      if (blob) {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = pdfObj.nome || 'controle-de-carga.pdf';
+        document.body.appendChild(a);
+        a.click();
+        avisarDownloadEAtualizar();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      }
+    }
+
+    async function excluirPDF(id) {
+      Swal.fire({
+        title: 'EXCLUIR PDF?',
+        html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> ESTA AÇÃO <span class="text-red-500 font-bold">NÃO PODERÁ SER DESFEITA </span>.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#000000',
+        confirmButtonText: 'EXCLUIR',
+        cancelButtonText: 'CANCELAR'
+      }).then(async (result) => {
+        if (result.isConfirmed) {
+          await dbExcluirPDF(id);
+          await renderizarGridPDFs();
+          Swal.fire({
+            icon: 'success',
+            title: 'EXCLUÍDO!',
+            html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> O PDF FOI EXCLUÍDO DO HISTÓRICO.',
+            timer: 1500,
+            showConfirmButton: false
+          });
+        }
+      });
+    }
+
+    function openManager(type) {
+      activeManagerType = type;
+      editingOptionId = null;
+      document.getElementById('manager-modal').classList.add('active');
+      document.getElementById('modal-input-name').value = '';
+      
+      const title = document.getElementById('modal-title');
+      if (type === 'recicladoras') {
+        title.textContent = 'GERENCIAR RECICLADORAS';
+      } else {
+        title.textContent = 'GERENCIAR TIPOS DE VEÍCULOS';
+      }
+
+      renderModalItems();
+    }
+
+    function closeManager() {
+      document.getElementById('manager-modal').classList.remove('active');
+      renderSelects();
+    }
+
+    function renderModalItems() {
+      const container = document.getElementById('modal-items-container');
+      container.innerHTML = '';
+
+      let list = activeManagerType === 'recicladoras' ? recicladoras : tiposVeiculos;
+
+      list.forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'modal-item';
+        div.innerHTML = `
+          <span>${item.nome.toUpperCase()}</span>
+          <div class="modal-item-actions">
+            <button class="btn-sm btn-outline" onclick="editOptionItem('${item.id}')">✏️</button>
+            <button class="btn-sm btn-danger-outline" onclick="deleteOptionItem('${item.id}')">🗑️</button>
+          </div>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    function addOptionItem() {
+      const nameInput = document.getElementById('modal-input-name');
+      const val = nameInput.value.trim().toUpperCase();
+      if (!val) {
+        mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> INFORME O NOME!', nameInput);
+        return;
+      }
+
+      if (activeManagerType === 'recicladoras') {
+        if (editingOptionId) {
+          const item = recicladoras.find(r => r.id === editingOptionId);
+          if (item) item.nome = val;
+        } else {
+          recicladoras.push({ id: 'rec_' + Date.now(), nome: val });
+        }
+      } else {
+        if (editingOptionId) {
+          const item = tiposVeiculos.find(v => v.id === editingOptionId);
+          if (item) item.nome = val;
+        } else {
+          tiposVeiculos.push({ id: 'v_' + Date.now(), nome: val });
+        }
+      }
+
+      editingOptionId = null;
+      nameInput.value = '';
+      renderSelects();
+      renderModalItems();
+    }
+
+    function editOptionItem(id) {
+      editingOptionId = id;
+      const list = activeManagerType === 'recicladoras' ? recicladoras : tiposVeiculos;
+      const item = list.find(x => x.id === id);
+      if (item) {
+        document.getElementById('modal-input-name').value = item.nome.toUpperCase();
+      }
+    }
+
+    function deleteOptionItem(id) {
+      Swal.fire({
+        title: 'EXCLUIR ITEM?',
+        html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> DESEJA REALMENTE <span class="text-red-500 font-bold">REMOVER ESTE ITEM</span> DA LISTA?',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#000000',
+        confirmButtonText: 'EXCLUIR',
+        cancelButtonText: 'CANCELAR'
+      }).then((result) => {
+        if (result.isConfirmed) {
+          if (activeManagerType === 'recicladoras') {
+            recicladoras = recicladoras.filter(r => r.id !== id);
+          } else {
+            tiposVeiculos = tiposVeiculos.filter(v => v.id !== id);
+          }
+          renderSelects();
+          renderModalItems();
+        }
+      });
+    }
+  </script>
+<script>
+/* Campos numéricos: texto + teclado numérico (evita o navegador apagar o valor mascarado) */
+document.addEventListener('input', function (e) {
+    var t = e.target;
+    if (t && t.hasAttribute && t.hasAttribute('data-so-numeros')) {
+        var v = t.value.replace(/\D/g, '');
+        if (v !== t.value) t.value = v;
+    }
+});
+</script>
+<script>
+(function () {
+    if (window.Armazem) return;
+    var d = document.createElement('div');
+    d.setAttribute('style', 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:99999;background:#fff;color:#b91c1c;font:700 16px sans-serif;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;text-transform:uppercase');
+    d.textContent = 'ARQUIVO "armazem.js" NÃO ENCONTRADO. COPIE armazem.js, nuvem.js E firebase-config.js PARA A MESMA PASTA DESTA PÁGINA.';
+    document.body.appendChild(d);
+})();
+</script>
+</body>
+</html>

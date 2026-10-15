@@ -1,0 +1,59 @@
+REGRAS DE SEGURANÇA DO FIREBASE — só e-mails liberados acessam, e cada pessoa vê apenas os próprios dados
+==========================================================================================================
+
+COMO USAR
+1) Console do Firebase > Firestore Database > aba "Regras": apague o conteúdo e cole o bloco FIRESTORE abaixo > Publicar.
+2) Console do Firebase > Storage > aba "Regras": apague o conteúdo e cole o bloco STORAGE abaixo > Publicar.
+3) Troque os e-mails de exemplo pelos e-mails Google das pessoas liberadas (em MINÚSCULAS, entre aspas simples, separados por vírgula).
+   A mesma lista deve estar nos DOIS blocos. Para liberar uma nova pessoa, acrescente o e-mail nos dois e publique de novo.
+4) Console > Authentication > Sign-in method: ative o provedor "Google".
+5) Console > Authentication > Settings > Authorized domains: confirme que dxm-sistemas-apps.github.io está na lista.
+
+Quem entrar com um e-mail que não está na lista consegue logar no Google, mas o Firebase recusa ler e gravar;
+o sistema mostra "ACESSO NÃO LIBERADO" e os dados continuam salvos só no aparelho.
+
+
+----------------------------------------------------------------------------------------------------------
+BLOCO FIRESTORE
+----------------------------------------------------------------------------------------------------------
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function autorizado() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email.lower() in [
+          'pessoa1@gmail.com',
+          'pessoa2@gmail.com'
+        ];
+    }
+
+    match /usuarios/{uid}/{todos=**} {
+      allow read, write: if autorizado() && request.auth.uid == uid;
+    }
+  }
+}
+
+
+----------------------------------------------------------------------------------------------------------
+BLOCO STORAGE
+----------------------------------------------------------------------------------------------------------
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function autorizado() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email.lower() in [
+          'pessoa1@gmail.com',
+          'pessoa2@gmail.com'
+        ];
+    }
+
+    match /usuarios/{uid}/{arquivos=**} {
+      allow read, write: if autorizado() && request.auth.uid == uid;
+    }
+  }
+}

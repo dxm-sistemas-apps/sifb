@@ -1,0 +1,3238 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CONTROLE DE SUCATAS</title>
+  <script src="firebase-config.js"></script>
+  <script src="armazem.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <!-- Alertas SweetAlert2 sempre centralizados e totalmente visíveis na parte visível da tela -->
+  <script>
+  (function () {
+      if (typeof Swal === 'undefined') return;
+
+      // Mantém o contêiner do alerta exatamente sobre a área VISÍVEL (considera zoom, barra do navegador e teclado)
+      function ajustarAreaVisivel() {
+          const c = document.querySelector('.swal2-container');
+          const vv = window.visualViewport;
+          if (!c || !vv) return;
+          c.style.setProperty('top', vv.offsetTop + 'px', 'important');
+          c.style.setProperty('left', vv.offsetLeft + 'px', 'important');
+          c.style.setProperty('width', vv.width + 'px', 'important');
+          c.style.setProperty('height', vv.height + 'px', 'important');
+          c.style.setProperty('right', 'auto', 'important');
+          c.style.setProperty('bottom', 'auto', 'important');
+      }
+      function ativarAreaVisivel() {
+          ajustarAreaVisivel();
+          if (window.visualViewport) {
+              window.visualViewport.addEventListener('resize', ajustarAreaVisivel);
+              window.visualViewport.addEventListener('scroll', ajustarAreaVisivel);
+          }
+          window.addEventListener('resize', ajustarAreaVisivel);
+      }
+      function desativarAreaVisivel() {
+          if (window.visualViewport) {
+              window.visualViewport.removeEventListener('resize', ajustarAreaVisivel);
+              window.visualViewport.removeEventListener('scroll', ajustarAreaVisivel);
+          }
+          window.removeEventListener('resize', ajustarAreaVisivel);
+      }
+
+      const fireOriginal = Swal.fire.bind(Swal);
+      Swal.fire = function (...args) {
+          if (args.length && args[0] && typeof args[0] === 'object') {
+              const opcoes = Object.assign({ position: 'center', heightAuto: false, scrollbarPadding: false }, args[0]);
+              // Botões padronizados: EXCLUIR PDF (excluir vermelho / cancelar preto) e CAMPO OBRIGATÓRIO (OK preto)
+              const tituloAlertaPadrao = String(opcoes.title || '').toUpperCase();
+              if (tituloAlertaPadrao.indexOf('EXCLUIR PDF') !== -1) { opcoes.confirmButtonColor = '#ef4444'; opcoes.cancelButtonColor = '#000000'; }
+              if (tituloAlertaPadrao.indexOf('CAMPO OBRIGAT') !== -1) { opcoes.confirmButtonColor = '#000000'; }
+              const didOpenOriginal = opcoes.didOpen;
+              const didCloseOriginal = opcoes.didClose;
+              opcoes.didOpen = function (...a) {
+                  ativarAreaVisivel();
+                  if (typeof didOpenOriginal === 'function') return didOpenOriginal.apply(this, a);
+              };
+              opcoes.didClose = function (...a) {
+                  desativarAreaVisivel();
+                  if (typeof didCloseOriginal === 'function') return didCloseOriginal.apply(this, a);
+              };
+              args[0] = opcoes;
+          }
+          return fireOriginal(...args);
+      };
+  })();
+  </script>
+  <style>
+      .swal2-container {
+          position: fixed !important;
+          top: 0 !important; right: 0 !important; bottom: 0 !important; left: 0 !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          box-sizing: border-box !important;
+          padding: 12px !important;
+          overflow-y: auto !important;
+      }
+      .swal2-popup {
+          box-sizing: border-box !important;
+          margin: auto !important;
+          max-width: 100% !important;
+          max-height: calc(100vh - 24px);
+          max-height: calc(100dvh - 24px);
+          overflow-y: auto;
+      }
+      .swal2-title,
+      .swal2-html-container {
+          overflow-wrap: anywhere;
+          word-break: break-word;
+      }
+      .swal2-html-container {
+          max-height: 55vh;
+          max-height: 55dvh;
+          overflow-y: auto;
+      }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+  <style>
+    :root {
+      --bg-color: #f4f5f7;
+      --card-bg: #f8fafc;
+      --text-main: #111827;
+      --text-muted: #6b7280;
+      --border-color: #e5e7eb;
+      --primary-red: #b91c1c;
+      --primary-dark: #0f172a;
+      --accent-blue: #1d4ed8;
+      --radius: 6px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border-radius: var(--radius);
+      padding: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      border: 1px solid var(--border-color);
+    }
+
+    .form-group {
+      margin-bottom: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .form-group:last-child {
+      margin-bottom: 0;
+    }
+
+    label {
+      font-size: 0.65rem;
+      font-weight: 800;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .btn-manage-link {
+      background: none;
+      border: none;
+      color: var(--accent-blue);
+      font-size: 0.65rem;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+
+    input[type="text"],
+    input[type="date"],
+    select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius);
+      font-size: 0.85rem;
+      background-color: #ffffff;
+      color: var(--text-main);
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      text-transform: uppercase;
+    }
+
+    input:focus, select:focus {
+      border-color: var(--primary-dark);
+      background-color: #fff;
+    }
+
+    input[readonly] {
+      background-color: #f3f4f6;
+      color: var(--text-muted);
+      cursor: not-allowed;
+    }
+
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 4px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 10px;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 0.8rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: opacity 0.2s;
+    }
+
+    .btn:active {
+      opacity: 0.8;
+    }
+
+    .btn-red { background-color: var(--primary-red); color: white; }
+    .btn-dark { 
+  background-color: #2563eb; /* bg-blue-600 */
+  color: white; 
+}
+.btn-dark:hover {
+  background-color: #3b82f6; /* hover:bg-blue-500 */
+}
+    .btn-outline { background-color: #ffffff; border: 1px solid var(--border-color); color: var(--text-main); }
+    .btn-danger-outline { 
+  background-color: #dc2626; /* bg-red-600 */
+  color: #ffffff; 
+  border: none;
+}
+.btn-danger-outline:hover {
+  background-color: #ef4444; /* hover:bg-red-500 */
+}
+    .btn-green { 
+  background-color: #16a34a; /* bg-green-600 */
+  color: white; 
+}
+.btn-green:hover {
+  background-color: #22c55e; /* hover:bg-green-500 */
+}
+
+    .section-title {
+      font-size: 0.8rem;
+      font-weight: 800;
+      color: var(--primary-dark);
+      text-transform: uppercase;
+      margin-bottom: 12px;
+      letter-spacing: 0.5px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .item-card {
+      background: var(--card-bg);
+      border-radius: var(--radius);
+      overflow: hidden;
+      border: 1px solid var(--border-color);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+
+    .item-header {
+      background-color: var(--primary-dark);
+      color: white;
+      padding: 8px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 800;
+      font-size: 0.9rem;
+    }
+
+    .item-actions-group {
+      display: flex;
+      gap: 6px;
+    }
+
+    .btn-icon {
+      background: none;
+      border: none;
+      color: white;
+      cursor: pointer;
+      font-size: 0.9rem;
+      opacity: 0.8;
+      padding: 2px 4px;
+    }
+
+    .btn-icon:hover { opacity: 1; }
+
+    .item-body {
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .item-details {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .detail-group label {
+      font-size: 0.6rem;
+    }
+
+    .detail-group div {
+      font-size: 0.85rem;
+      font-weight: 800;
+      color: var(--primary-dark);
+      text-transform: uppercase;
+    }
+
+    .badge-plate {
+      display: inline-block;
+      background-color: #e0e7ff;
+      color: #3730a3;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-weight: 700;
+      margin-top: 2px;
+    }
+
+    .images-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 8px;
+      width: 100%;
+    }
+
+    .item-image {
+      width: 100%;
+      height: 95px;
+      object-fit: contain;
+      border-radius: var(--radius);
+      border: 1px solid var(--border-color);
+      background-color: #f3f4f6;
+      cursor: zoom-in;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .item-image:hover {
+      transform: scale(1.03);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+
+    .modal {
+      display: none;
+      position: fixed;
+      top:0; left:0; right:0; bottom:0;
+      background: rgba(0,0,0,0.6);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      backdrop-filter: blur(2px);
+    }
+
+    .modal.active { display: flex; }
+
+    .modal-content {
+      background: white;
+      border-radius: var(--radius);
+      width: 100%;
+      max-width: 400px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      max-height: 85vh;
+      box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2);
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 8px;
+    }
+
+    .modal-header h4 { font-size: 0.9rem; font-weight: 800; text-transform: uppercase; }
+
+    .modal-list {
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 250px;
+      border: 1px solid var(--border-color);
+      padding: 8px;
+      border-radius: var(--radius);
+    }
+
+    .modal-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px;
+      background: #f9fafb;
+      border-radius: 4px;
+      font-size: 0.8rem;
+    }
+
+    .modal-item-actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    .btn-sm {
+      padding: 2px 6px;
+      font-size: 0.7rem;
+      border-radius: 3px;
+      cursor: pointer;
+      border: none;
+    }
+
+    .lightbox-modal {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.9);
+      z-index: 2000;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      backdrop-filter: blur(4px);
+    }
+
+    .lightbox-modal.active { display: flex; }
+
+    .lightbox-img-wrapper {
+      position: relative;
+      max-width: 95vw;
+      max-height: 90vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .lightbox-img {
+      max-width: 100%;
+      max-height: 90vh;
+      object-fit: contain;
+      border-radius: var(--radius);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    }
+
+    .lightbox-close {
+      position: absolute;
+      top: -16px;
+      right: -16px;
+      background: var(--primary-red);
+      color: white;
+      border: none;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      font-size: 1.2rem;
+      font-weight: bold;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #preview-container {
+      width: 100%;
+      margin-top: 8px;
+      display: none;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .preview-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 6px;
+    }
+
+    .preview-thumb-box {
+      position: relative;
+      width: 100%;
+      padding-top: 100%;
+      border-radius: var(--radius);
+      overflow: hidden;
+      border: 1px solid var(--border-color);
+      background: #f3f4f6;
+      cursor: zoom-in;
+    }
+
+    .preview-thumb-box img {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      object-fit: contain;
+    }
+
+    .preview-thumb-remove {
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      background: rgba(185, 28, 28, 0.9);
+      color: white;
+      border: none;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      font-size: 10px;
+      font-weight: bold;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2;
+    }
+
+    .img-counter {
+      font-size: 0.65rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-align: right;
+    }
+
+    .pdf-history-header {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .pdf-search-wrapper {
+      position: relative;
+    }
+
+    .pdf-search-wrapper input {
+      padding-left: 32px;
+    }
+
+    .pdf-search-icon {
+      position: absolute;
+      left: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      pointer-events: none;
+    }
+
+    .pdf-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+
+    .pdf-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      background: #f9fafb;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+    }
+
+    .pdf-card-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      overflow: hidden;
+      cursor: pointer;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .pdf-card-icon {
+      font-size: 1.6rem;
+      flex-shrink: 0;
+    }
+
+    .pdf-card-text {
+      overflow: hidden;
+      min-width: 0;
+      width: 100%;
+    }
+
+    .pdf-card-title {
+      font-size: 0.8rem;
+      font-weight: 800;
+      color: var(--primary-dark);
+      text-transform: uppercase;
+      word-break: break-word;
+      overflow-wrap: break-word;
+      white-space: normal;
+    }
+
+    .pdf-card-meta {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .pdf-card-actions {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .btn-icon-pdf {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 1rem;
+      padding: 4px 6px;
+      border-radius: 4px;
+      transition: background 0.15s;
+    }
+
+    .btn-icon-pdf:hover {
+      background: rgba(0, 0, 0, 0.06);
+    }
+
+    .pdf-empty-state {
+      text-align: center;
+      padding: 24px 12px;
+      border: 1px dashed var(--border-color);
+      border-radius: var(--radius);
+      font-size: 0.7rem;
+      font-weight: 800;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    @media print {
+      .no-print { display: none !important; }
+      body { background-color: #fff !important; }
+      #conteudo-principal { border: none !important; box-shadow: none !important; }
+    }
+  </style>
+</head>
+
+<body class="bg-[#f1f5f9] text-gray-800 font-sans min-h-screen antialiased pb-12">
+
+  <header class="bg-[#001039] text-white shadow-md no-print">
+      <div class="max-w-5xl mx-auto px-4 py-3 flex flex-col items-center justify-center text-center">
+          <div class="bg-blue p-1.5 rounded-lg shadow-sm mb-2">
+              <img id="appLogo" class="h-64 object-contain" alt="Logo DGAD">
+          </div>
+          
+      </div>
+  </header>
+
+  <div id="conteudo-principal" class="max-w-4xl mx-auto bg-white p-2 sm:p-8 mt-0 sm:mt-6 shadow-md rounded-none sm:rounded-lg border border-gray-200">
+    
+        <header class="text-center border-b-2 border-gray-800 pb-4 mb-6">
+            <div class="flex justify-center mb-3">
+                <img  src="https://upload.wikimedia.org/wikipedia/commons/e/e2/Ins%C3%ADgnia_bras%C3%A3o_estilizado_governos_Wilson_Witzel_e_Cl%C3%A1udio_Castro_RJ.png" alt="Brasão do Estado do Rio de Janeiro" class="h-24 w-auto object-contain">
+        </div>
+        <h1 class="text-lg sm:text-xl font-bold uppercase tracking-wide">Governo do Estado do Rio de Janeiro</h1>
+            <h2 class="text-md sm:text-lg font-semibold uppercase">Departamento de Trânsito do Estado do Rio de Janeiro - DETRAN.RJ</h2>
+            <h3 class="text-sm sm:text-md font-medium text-black-600 uppercase mt-1">Diretoria Geral das Atividades de Desmontagem</h3>
+            <h3 class="text-sm sm:text-md font-medium text-black-600 uppercase mt-1">DIVISÃO DE FISCALIZAÇÃO</h3>
+    </header>
+
+    <div class="card">
+      <div class="form-group">
+        <label for="header-atividade">NATUREZA DA ATIVIDADE: *</label>
+        <select id="header-atividade" onchange="atualizarCamposNatureza()">
+          <option value="" selected>ESCOLHA UMA OPÇÃO</option>
+          <option value="FISCALIZAÇÃO DE EMPRESA CREDENCIADA">FISCALIZAÇÃO DE EMPRESA CREDENCIADA</option>
+          <option value="FISCALIZAÇÃO DE PRIMEIRO CREDENCIAMENTO">FISCALIZAÇÃO DE PRIMEIRO CREDENCIAMENTO</option>
+          <option value="FISCALIZAÇÃO DE RENOVAÇÃO DE CREDENCIAMENTO">FISCALIZAÇÃO DE RENOVAÇÃO DE CREDENCIAMENTO</option>
+          <option value="FISCALIZAÇÃO DE APURAÇÃO DE DENÚNCIA">FISCALIZAÇÃO DE APURAÇÃO DE DENÚNCIA</option>
+          <option value="FISCALIZAÇÃO DE FORÇA TAREFA">FISCALIZAÇÃO DE FORÇA TAREFA</option>
+          <option value="FISCALIZAÇÃO DE APOIO">FISCALIZAÇÃO DE APOIO</option>
+        </select>
+      </div>
+      <div class="form-group" id="grupo-apoio" style="display: none;">
+        <label for="header-apoio">APOIO À: *</label>
+        <input type="text" id="header-apoio" placeholder="EX.: DRFA / POLÍCIA CIVIL" oninput="var s=this.selectionStart,e=this.selectionEnd;this.value=this.value.toUpperCase();this.setSelectionRange(s,e);">
+      </div>
+      <div class="form-group" id="grupo-fase-forca-tarefa" style="display: none;">
+        <label for="header-fase-forca-tarefa">FASE DA FORÇA TAREFA: *</label>
+        <input data-so-numeros type="text" inputmode="numeric" autocomplete="off" id="header-fase-forca-tarefa" placeholder="FASE DA FORÇA TAREFA" oninput="this.value = this.value.toUpperCase()">
+      </div>
+      <div class="form-group" id="grupo-estabelecimento" style="display: none;">
+        <label for="header-estabelecimento">EMPRESA / ESTABELECIMENTO: *</label>
+        <input type="text" id="header-estabelecimento" placeholder="RAZÃO SOCIAL / NOME FANTASIA" oninput="this.value = this.value.toUpperCase()">
+      </div>
+      <div class="form-group" id="grupo-endereco" style="display: none;">
+        <label for="header-local">ENDEREÇO: *</label>
+        <input type="text" id="header-local" placeholder="ENDEREÇO COMPLETO" oninput="this.value = this.value.toUpperCase()">
+      </div>
+      <div class="form-group">
+        <label for="header-data">DATA: *</label>
+        <input type="date" id="header-data">
+      </div>
+    </div>
+
+    <div class="card" id="form-card">
+      <div class="section-title">
+        <span id="form-section-title">NOVA SUCATA</span>
+        <button id="btn-cancel-edit" class="btn-sm btn-outline" style="display:none;" onclick="cancelarEdicao()">CANCELAR EDIÇÃO</button>
+      </div>
+
+      <div class="form-group">
+        <label>
+          MONTADORA: *
+          <button class="btn-manage-link" onclick="openManager('montadoras')">+ GERENCIAR</button>
+        </label>
+        <select id="reg-montadora" onchange="aoMudarMontadora()"></select>
+      </div>
+
+      <div class="form-group">
+        <label>
+          ESCOLHA O MODELO DA MONTADORA: *
+          <button class="btn-manage-link" onclick="openManager('modelos')">+ GERENCIAR</button>
+        </label>
+        <select id="reg-modelo-select" onchange="aoSelecionarModeloDropdown()" disabled>
+          <option value="">PRIMEIRO SELECIONE A MONTADORA</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>
+          MODELO DO VEÍCULO: *
+        </label>
+        <input type="text" id="reg-modelo" placeholder="Preenchido automaticamente ao escolher o modelo" readonly>
+      </div>
+
+      <div class="form-group">
+        <label>
+          COR: *
+          <button class="btn-manage-link" onclick="openManager('cores')">+ GERENCIAR</button>
+        </label>
+        <select id="reg-cor"></select>
+      </div>
+
+      <div class="form-group">
+        <label>IDENTIFICAÇÃO: *</label>
+        <div class="checkbox-group">
+          <input type="checkbox" id="reg-has-plate" onchange="togglePlateInput()">
+          <label for="reg-has-plate" style="text-transform:none; font-weight:normal;">SE POSSÍVEL, INFORMAR CHASSI / PLACA / VIS</label>
+        </div>
+        <input type="text" id="reg-placa" value="SEM IDENTIFICAÇÃO" readonly oninput="this.value = this.value.toUpperCase()">
+      </div>
+
+      <div class="form-group">
+        <label>IMAGENS (MÁXIMO 5): *</label>
+        <div class="btn-row">
+          <button class="btn btn-outline" type="button" onclick="triggerCameraInput()">📷 CAPTURAR FOTO</button>
+          <input type="file" id="file-camera" accept="image/*" capture="environment" style="display:none;" onchange="handleImageUpload(event)">
+          
+          <button class="btn btn-outline" type="button" onclick="triggerUploadInput()">📁 GALERIA / ARQUIVOS</button>
+          <input type="file" id="file-upload" accept="image/*" multiple style="display:none;" onchange="handleImageUpload(event)">
+        </div>
+        <div id="preview-container">
+          <div class="img-counter" id="img-counter-label">0 / 5 imagens anexadas</div>
+          <div class="preview-grid" id="preview-grid"></div>
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; margin-top: 12px;">
+        <button id="btn-salvar" class="btn btn-dark" style="width: 120px;" onclick="salvarRegistro()">REGISTRAR SUCATA</button>
+      </div>
+    </div>
+
+    <div id="items-list" style="display: flex; flex-direction: column; gap: 16px;"></div>
+
+    <div id="barra-acoes" class="no-print mt-2 flex flex-col sm:flex-row flex-wrap gap-3 justify-end items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+      <button type="button" onclick="limparTabela()"
+                class="w-full sm:w-auto px-4 py-2.5 bg-red-600 hover:bg-red-500 border border-red-200 text-white font-bold rounded-lg text-sm  transition flex items-center justify-center space-x-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+                <span>LIMPAR PÁGINA</span>
+            </button>
+      <button type="button" onclick="compartilharResumo()"
+                class="w-full sm:w-auto px-5 py-2.5 bg-green-600 hover:bg-green-500 text-white font-bold rounded-lg text-sm shadow-md transition flex items-center justify-center space-x-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>
+                <span>COMPARTILHAR RESUMO (WHATSAPP)</span>
+            </button>
+      <button type="button" onclick="perguntarResumoWhatsAppAntesDoPDF()"
+                class="w-full sm:w-auto px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg text-sm shadow-md transition flex items-center justify-center space-x-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 22h14a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v4"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m3 15 2 2 4-4"/></svg>
+                <span>GERAR PDF</span>
+            </button>
+    </div>
+
+    <div class="card no-print" id="secao-historico-pdf" style="margin-top: 16px;">
+      <div class="pdf-history-header">
+        <div class="section-title" style="margin-bottom: 0;">
+          <span>📄 PDF'S GERADOS - CONTROLE DE SUCATAS</span>
+        </div>
+        <div class="pdf-search-wrapper" style="margin-top: 8px;">
+          <span class="pdf-search-icon">🔍</span>
+          <input type="text" id="busca-pdf" oninput="renderizarGridPDFs()" placeholder="BUSCAR PDF POR NATUREZA DA ATIVIDADE, ESTABELECIMENTO OU DATA">
+        </div>
+      </div>
+      <div class="pdf-grid" id="grid-pdfs-container"></div>
+    </div>
+
+  </div>
+
+  <div class="modal" id="manager-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h4 id="modal-title">Gerenciar Lista</h4>
+        <button class="btn-sm btn-outline" onclick="closeManager()">✕</button>
+      </div>
+      
+      <div id="modal-add-form" class="form-group">
+        <input type="text" id="modal-input-name" placeholder="Nome..." oninput="this.value = this.value.toUpperCase()">
+        <select id="modal-input-sub" style="display:none; margin-top: 6px;"></select>
+        <button class="btn btn-dark" style="margin-top:6px;" onclick="addOptionItem()">ADICIONAR</button>
+      </div>
+
+      <div class="modal-list" id="modal-items-container"></div>
+    </div>
+  </div>
+
+  <div class="lightbox-modal" id="lightbox-modal" onclick="closeLightbox()">
+    <div class="lightbox-img-wrapper" onclick="event.stopPropagation()">
+      <button class="lightbox-close" onclick="closeLightbox()">✕</button>
+      <img id="lightbox-img" class="lightbox-img" src="" alt="Imagem Ampliada">
+    </div>
+  </div>
+
+  <script type="text/armazem">
+    const LOGO_DGAD_SUPORTE = "sucata.png";
+
+    const STORAGE_KEYS = {
+      HEADER: 'detran_header_data_sucata',
+      FORM: 'detran_current_form_sucata',
+      MONTADORAS: 'detran_list_montadoras_sucata',
+      MODELOS: 'detran_list_modelos_sucata',
+      CORES: 'detran_list_cores_sucata',
+      REGISTROS: 'detran_registros_list_sucata',
+      HISTORICO_PDFS: 'detran_historico_pdfs_sucata',
+      DELETED_PREFIX: 'detran_deleted_'
+    };
+
+    const DB_NAME = 'DetranSucatasDB';
+    const DB_VERSION = 1;
+    const STORE_PDFS = 'historico_pdfs';
+
+    function normalizarTexto(texto) {
+      return (texto || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().trim();
+    }
+
+    function atualizarCamposNatureza() {
+      const natureza = document.getElementById('header-atividade').value;
+      const grupoApoio = document.getElementById('grupo-apoio');
+      const grupoFase = document.getElementById('grupo-fase-forca-tarefa');
+      const grupoEstab = document.getElementById('grupo-estabelecimento');
+      const grupoEndereco = document.getElementById('grupo-endereco');
+
+      if (!natureza) {
+          grupoApoio.style.display = 'none';
+          grupoFase.style.display = 'none';
+          grupoEstab.style.display = 'none';
+          grupoEndereco.style.display = 'none';
+          return;
+      }
+
+      const semFaseNemEndereco = [
+          'FISCALIZAÇÃO DE EMPRESA CREDENCIADA',
+          'FISCALIZAÇÃO DE PRIMEIRO CREDENCIAMENTO',
+          'FISCALIZAÇÃO DE RENOVAÇÃO DE CREDENCIAMENTO'
+      ].includes(natureza);
+      const semFase = natureza === 'FISCALIZAÇÃO DE APURAÇÃO DE DENÚNCIA' || natureza === 'FISCALIZAÇÃO DE APOIO';
+
+      grupoEstab.style.display = '';
+      grupoApoio.style.display = natureza === 'FISCALIZAÇÃO DE APOIO' ? '' : 'none';
+
+      if (semFaseNemEndereco) {
+          grupoFase.style.display = 'none';
+          grupoEndereco.style.display = 'none';
+      } else if (semFase) {
+          grupoFase.style.display = 'none';
+          grupoEndereco.style.display = '';
+      } else {
+          grupoFase.style.display = '';
+          grupoEndereco.style.display = '';
+      }
+    }
+    
+    function openIndexedDB() {
+      return new Promise((resolve, reject) => {
+        if (!window.indexedDB) return reject(new Error('IndexedDB indisponível'));
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onupgradeneeded = (e) => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains(STORE_PDFS)) {
+            db.createObjectStore(STORE_PDFS, { keyPath: 'id' });
+          }
+        };
+        request.onsuccess = (e) => resolve(e.target.result);
+        request.onerror = (e) => reject(e.target.error);
+      });
+    }
+
+    /* ===== Histórico de PDFs: agora no Armazem (IndexedDB, sem limite de tamanho) ===== */
+    const HIST_KEY = 'historico_pdfs_sucata';
+
+    function lerHistoricoLocal() {
+      try { return JSON.parse(Armazem.ls.getItem(HIST_KEY)) || []; } catch (_) { return []; }
+    }
+
+    function blobDoItemAntigo(item) {
+      if (item && item.blob instanceof Blob) return item.blob;
+      if (item && item.dataUri) return Armazem.dataUriParaBlob(item.dataUri);
+      return null;
+    }
+
+    let migracaoHistorico = null;
+    function migrarHistoricoAntigoParaIndexedDB() {
+      if (migracaoHistorico) return migracaoHistorico;
+      migracaoHistorico = (async () => {
+        // 1) lista antiga guardada no localStorage
+        try {
+          const chaveAntiga = STORAGE_KEYS.HISTORICO_PDFS;
+          const antigos = JSON.parse(Armazem.ls.getItem(chaveAntiga));
+          if (Array.isArray(antigos) && antigos.length) {
+            const existentes = new Set(lerHistoricoLocal().map(i => String(i.id)));
+            for (const item of antigos) {
+              if (existentes.has(String(item.id))) continue;
+              const blob = blobDoItemAntigo(item);
+              if (blob) await Armazem.addPDF(HIST_KEY, item, blob);
+            }
+          }
+          if (antigos !== null) Armazem.ls.removeItem(chaveAntiga);
+        } catch (e) { console.warn('Migração (localStorage):', e); }
+
+        // 2) banco antigo (IndexedDB próprio desta página)
+        try {
+          const db = await openIndexedDB();
+          const todos = await new Promise((res, rej) => {
+            const r = db.transaction(STORE_PDFS, 'readonly').objectStore(STORE_PDFS).getAll();
+            r.onsuccess = () => res(r.result || []);
+            r.onerror = () => rej(r.error);
+          });
+          for (const item of todos) {
+            const blob = blobDoItemAntigo(item);
+            if (!blob) continue;
+            const jaExiste = lerHistoricoLocal().some(i => String(i.id) === String(item.id));
+            const f0 = Armazem.falhas();
+            if (!jaExiste) await Armazem.addPDF(HIST_KEY, item, blob);
+            if (await Armazem.aguardarGravacao(f0)) {
+              await new Promise(res => {
+                const r = db.transaction(STORE_PDFS, 'readwrite').objectStore(STORE_PDFS).delete(item.id);
+                r.onsuccess = r.onerror = () => res();
+              });
+            }
+          }
+        } catch (_) {}
+      })();
+      return migracaoHistorico;
+    }
+
+    async function dbSalvarPDF(pdfObj) {
+      const blob = blobDoItemAntigo(pdfObj);
+      if (!blob) throw new Error('PDF sem conteúdo');
+      await Armazem.addPDF(HIST_KEY, pdfObj, blob);
+      return true;
+    }
+
+    async function dbObterTodosPDFs() {
+      await migrarHistoricoAntigoParaIndexedDB();
+      return lerHistoricoLocal();
+    }
+
+    async function dbObterPDFPorId(id) {
+      await migrarHistoricoAntigoParaIndexedDB();
+      const item = lerHistoricoLocal().find(i => String(i.id) === String(id));
+      if (!item) return null;
+      const copia = Object.assign({}, item);
+      copia.blob = await Armazem.blobDe(copia);
+      return copia;
+    }
+
+    async function dbExcluirPDF(id) {
+      const lista = lerHistoricoLocal().filter(i => String(i.id) !== String(id));
+      Armazem.ls.setItem(HIST_KEY, JSON.stringify(lista));
+      return true;
+    }
+
+    const defaultMontadoras = [
+      { id: 'm_asia_motors', nome: 'ASIA MOTORS', tipo: 'carro' },
+      { id: 'm_audi', nome: 'AUDI', tipo: 'carro' },
+      { id: 'm_bmw', nome: 'BMW', tipo: 'carro' },
+      { id: 'm_byd', nome: 'BYD', tipo: 'carro' },
+      { id: 'm_chery', nome: 'CHERY', tipo: 'carro' },
+      { id: 'm_chevrolet', nome: 'CHEVROLET', tipo: 'carro' },
+      { id: 'm_citroen', nome: 'CITROËN', tipo: 'carro' },
+      { id: 'm_fiat', nome: 'FIAT', tipo: 'carro' },
+      { id: 'm_ford', nome: 'FORD', tipo: 'carro' },
+      { id: 'm_honda', nome: 'HONDA', tipo: 'carro' },
+      { id: 'm_hyundai', nome: 'HYUNDAI', tipo: 'carro' },
+      { id: 'm_jac', nome: 'JAC MOTORS', tipo: 'carro' },
+      { id: 'm_jeep', nome: 'JEEP', tipo: 'carro' },
+      { id: 'm_kia', nome: 'KIA', tipo: 'carro' },
+      { id: 'm_mercedes_benz', nome: 'MERCEDES-BENZ', tipo: 'carro' },
+      { id: 'm_mitsubishi', nome: 'MITSUBISHI', tipo: 'carro' },
+      { id: 'm_nissan', nome: 'NISSAN', tipo: 'carro' },
+      { id: 'm_ora', nome: 'ORA', tipo: 'carro' },
+      { id: 'm_omoda', nome: 'OMODA', tipo: 'carro' },
+      { id: 'm_peugeot', nome: 'PEUGEOT', tipo: 'carro' },
+      { id: 'm_ram', nome: 'RAM', tipo: 'carro' },
+      { id: 'm_renault', nome: 'RENAULT', tipo: 'carro' },
+      { id: 'm_ssangyong', nome: 'SSANGYONG', tipo: 'carro' },
+      { id: 'm_suzuki', nome: 'SUZUKI', tipo: 'carro' },
+      { id: 'm_toyota', nome: 'TOYOTA', tipo: 'carro' },
+      { id: 'm_troller', nome: 'TROLLER', tipo: 'carro' },
+      { id: 'm_volkswagen', nome: 'VOLKSWAGEN', tipo: 'carro' },
+      { id: 'm_volvo', nome: 'VOLVO', tipo: 'carro' },
+      { id: 'm_bajaj', nome: 'BAJAJ', tipo: 'moto' },
+      { id: 'm_dafra', nome: 'DAFRA', tipo: 'moto' },
+      { id: 'm_kawasaki', nome: 'KAWASAKI', tipo: 'moto' },
+      { id: 'm_ktm', nome: 'KTM', tipo: 'moto' },
+      { id: 'm_royal_enfield', nome: 'ROYAL ENFIELD', tipo: 'moto' },
+      { id: 'm_hondamotos', nome: 'HONDA', tipo: 'moto' },
+      { id: 'm_shineray_motos', nome: 'SHINERAY', tipo: 'moto' },
+      { id: 'm_suzuki_motos', nome: 'SUZUKI', tipo: 'moto' },
+      { id: 'm_triumph', nome: 'TRIUMPH', tipo: 'moto' },
+      { id: 'm_yamaha', nome: 'YAMAHA', tipo: 'moto' }
+    ];
+
+    const defaultModelos = [
+      { id: 'mod_1', nome: 'BESTA', montadoraId: 'm_asia_motors' },
+      { id: 'mod_5', nome: 'TOPIC', montadoraId: 'm_asia_motors' },
+      { id: 'mod_6', nome: 'TOWNER', montadoraId: 'm_asia_motors' },
+      { id: 'mod_12', nome: 'A3', montadoraId: 'm_audi' },
+      { id: 'mod_13', nome: 'A4', montadoraId: 'm_audi' },
+      { id: 'mod_14', nome: 'A5', montadoraId: 'm_audi' },
+      { id: 'mod_15', nome: 'A6', montadoraId: 'm_audi' },
+      { id: 'mod_16', nome: 'A7', montadoraId: 'm_audi' },
+      { id: 'mod_17', nome: 'A8', montadoraId: 'm_audi' },
+      { id: 'mod_18', nome: 'Q3', montadoraId: 'm_audi' },
+      { id: 'mod_19', nome: 'Q5', montadoraId: 'm_audi' },
+      { id: 'mod_20', nome: 'Q7', montadoraId: 'm_audi' },
+      { id: 'mod_21', nome: 'Q8', montadoraId: 'm_audi' },
+      { id: 'mod_22', nome: 'TT', montadoraId: 'm_audi' },
+      { id: 'mod_38', nome: 'SÉRIE 1', montadoraId: 'm_bmw' },
+      { id: 'mod_39', nome: 'SÉRIE 2', montadoraId: 'm_bmw' },
+      { id: 'mod_40', nome: 'SÉRIE 3', montadoraId: 'm_bmw' },
+      { id: 'mod_41', nome: 'SÉRIE 4', montadoraId: 'm_bmw' },
+      { id: 'mod_42', nome: 'SÉRIE 5', montadoraId: 'm_bmw' },
+      { id: 'mod_43', nome: 'SÉRIE 6', montadoraId: 'm_bmw' },
+      { id: 'mod_44', nome: 'SÉRIE 7', montadoraId: 'm_bmw' },
+      { id: 'mod_45', nome: 'SÉRIE 8', montadoraId: 'm_bmw' },
+      { id: 'mod_46', nome: 'X1', montadoraId: 'm_bmw' },
+      { id: 'mod_47', nome: 'X2', montadoraId: 'm_bmw' },
+      { id: 'mod_48', nome: 'X3', montadoraId: 'm_bmw' },
+      { id: 'mod_49', nome: 'X4', montadoraId: 'm_bmw' },
+      { id: 'mod_50', nome: 'X5', montadoraId: 'm_bmw' },
+      { id: 'mod_51', nome: 'X6', montadoraId: 'm_bmw' },
+      { id: 'mod_52', nome: 'X7', montadoraId: 'm_bmw' },
+      { id: 'mod_53', nome: 'Z3', montadoraId: 'm_bmw' },
+      { id: 'mod_54', nome: 'Z4', montadoraId: 'm_bmw' },
+      { id: 'mod_55', nome: 'Z8', montadoraId: 'm_bmw' },
+      { id: 'mod_56', nome: 'I3', montadoraId: 'm_bmw' },
+      { id: 'mod_57', nome: 'I4', montadoraId: 'm_bmw' },
+      { id: 'mod_58', nome: 'I5', montadoraId: 'm_bmw' },
+      { id: 'mod_59', nome: 'I7', montadoraId: 'm_bmw' },
+      { id: 'mod_60', nome: 'IX', montadoraId: 'm_bmw' },
+      { id: 'mod_61', nome: 'IX1', montadoraId: 'm_bmw' },
+      { id: 'mod_62', nome: 'IX3', montadoraId: 'm_bmw' },
+      { id: 'moto_407', nome: 'G 310 R', montadoraId: 'm_bmw' },
+      { id: 'moto_408', nome: 'F 700 GS', montadoraId: 'm_bmw' },
+      { id: 'moto_409', nome: 'F 750 GS', montadoraId: 'm_bmw' },
+      { id: 'moto_410', nome: 'F 800 GS', montadoraId: 'm_bmw' },
+      { id: 'moto_411', nome: 'F 850 GS', montadoraId: 'm_bmw' },
+      { id: 'moto_412', nome: 'R 1200 GS', montadoraId: 'm_bmw' },
+      { id: 'moto_413', nome: 'R 1250 GS', montadoraId: 'm_bmw' },
+      { id: 'moto_414', nome: 'S 1000 RR', montadoraId: 'm_bmw' },
+      { id: 'mod_63', nome: 'DOLPHIN', montadoraId: 'm_byd' },
+      { id: 'mod_64', nome: 'DOLPHIN MINI', montadoraId: 'm_byd' },
+      { id: 'mod_65', nome: 'DOLPHIN PLUS', montadoraId: 'm_byd' },
+      { id: 'mod_66', nome: 'HAN', montadoraId: 'm_byd' },
+      { id: 'mod_67', nome: 'KING', montadoraId: 'm_byd' },
+      { id: 'mod_68', nome: 'SEAL', montadoraId: 'm_byd' },
+      { id: 'mod_69', nome: 'SONG', montadoraId: 'm_byd' },
+      { id: 'mod_70', nome: 'SONG PLUS', montadoraId: 'm_byd' },
+      { id: 'mod_71', nome: 'SONG PRO', montadoraId: 'm_byd' },
+      { id: 'mod_72', nome: 'TAN', montadoraId: 'm_byd' },
+      { id: 'mod_73', nome: 'YUAN', montadoraId: 'm_byd' },
+      { id: 'mod_74', nome: 'YUAN PLUS', montadoraId: 'm_byd' },
+      { id: 'mod_75', nome: 'YUAN PRO', montadoraId: 'm_byd' },
+      { id: 'mod_76', nome: 'SHARK', montadoraId: 'm_byd' },
+      { id: 'mod_77', nome: 'KING PLUS', montadoraId: 'm_byd' },
+      { id: 'mod_78', nome: 'QQ', montadoraId: 'm_chery' },
+      { id: 'mod_79', nome: 'QQ3', montadoraId: 'm_chery' },
+      { id: 'mod_80', nome: 'FACE', montadoraId: 'm_chery' },
+      { id: 'mod_81', nome: 'CELER', montadoraId: 'm_chery' },
+      { id: 'mod_82', nome: 'CIELO', montadoraId: 'm_chery' },
+      { id: 'mod_83', nome: 'TIGGO', montadoraId: 'm_chery' },
+      { id: 'mod_84', nome: 'TIGGO 2', montadoraId: 'm_chery' },
+      { id: 'mod_85', nome: 'TIGGO 3', montadoraId: 'm_chery' },
+      { id: 'mod_86', nome: 'TIGGO 5', montadoraId: 'm_chery' },
+      { id: 'mod_87', nome: 'TIGGO 7', montadoraId: 'm_chery' },
+      { id: 'mod_88', nome: 'TIGGO 8', montadoraId: 'm_chery' },
+      { id: 'mod_89', nome: 'ARRIZO 3', montadoraId: 'm_chery' },
+      { id: 'mod_90', nome: 'ARRIZO 5', montadoraId: 'm_chery' },
+      { id: 'mod_91', nome: 'ARRIZO 6', montadoraId: 'm_chery' },
+      { id: 'mod_92', nome: 'CHEVETTE', montadoraId: 'm_chevrolet' },
+      { id: 'mod_93', nome: 'MARAJÓ', montadoraId: 'm_chevrolet' },
+      { id: 'mod_94', nome: 'MONZA', montadoraId: 'm_chevrolet' },
+      { id: 'mod_95', nome: 'KADETT', montadoraId: 'm_chevrolet' },
+      { id: 'mod_96', nome: 'IPANEMA', montadoraId: 'm_chevrolet' },
+      { id: 'mod_97', nome: 'OPALA', montadoraId: 'm_chevrolet' },
+      { id: 'mod_98', nome: 'CARAVAN', montadoraId: 'm_chevrolet' },
+      { id: 'mod_99', nome: 'OMEGA', montadoraId: 'm_chevrolet' },
+      { id: 'mod_100', nome: 'SUPREMA', montadoraId: 'm_chevrolet' },
+      { id: 'mod_101', nome: 'CORSA', montadoraId: 'm_chevrolet' },
+      { id: 'mod_102', nome: 'CORSA SEDAN', montadoraId: 'm_chevrolet' },
+      { id: 'mod_103', nome: 'CORSA CLASSIC', montadoraId: 'm_chevrolet' },
+      { id: 'mod_104', nome: 'CELTA', montadoraId: 'm_chevrolet' },
+      { id: 'mod_105', nome: 'PRISMA', montadoraId: 'm_chevrolet' },
+      { id: 'mod_106', nome: 'AGILE', montadoraId: 'm_chevrolet' },
+      { id: 'mod_107', nome: 'ASTRA', montadoraId: 'm_chevrolet' },
+      { id: 'mod_108', nome: 'VECTRA', montadoraId: 'm_chevrolet' },
+      { id: 'mod_109', nome: 'MERIVA', montadoraId: 'm_chevrolet' },
+      { id: 'mod_110', nome: 'ZAFIRA', montadoraId: 'm_chevrolet' },
+      { id: 'mod_111', nome: 'MONTANA', montadoraId: 'm_chevrolet' },
+      { id: 'mod_112', nome: 'COBALT', montadoraId: 'm_chevrolet' },
+      { id: 'mod_113', nome: 'SONIC', montadoraId: 'm_chevrolet' },
+      { id: 'mod_114', nome: 'CRUZE', montadoraId: 'm_chevrolet' },
+      { id: 'mod_116', nome: 'ONIX', montadoraId: 'm_chevrolet' },
+      { id: 'mod_118', nome: 'SPIN', montadoraId: 'm_chevrolet' },
+      { id: 'mod_119', nome: 'TRACKER', montadoraId: 'm_chevrolet' },
+      { id: 'mod_120', nome: 'TRAILBLAZER', montadoraId: 'm_chevrolet' },
+      { id: 'mod_121', nome: 'BLAZER', montadoraId: 'm_chevrolet' },
+      { id: 'mod_122', nome: 'S10', montadoraId: 'm_chevrolet' },
+      { id: 'mod_123', nome: 'SILVERADO', montadoraId: 'm_chevrolet' },
+      { id: 'mod_125', nome: 'CAPTIVA', montadoraId: 'm_chevrolet' },
+      { id: 'mod_126', nome: 'EQUINOX', montadoraId: 'm_chevrolet' },
+      { id: 'mod_127', nome: 'CAMARO', montadoraId: 'm_chevrolet' },
+      { id: 'mod_128', nome: 'MALIBU', montadoraId: 'm_chevrolet' },
+      { id: 'mod_130', nome: 'ASTRA SEDAN', montadoraId: 'm_chevrolet' },
+      { id: 'mod_131', nome: 'CLASSIC', montadoraId: 'm_chevrolet' },
+      { id: 'mod_132', nome: 'D20', montadoraId: 'm_chevrolet' },
+      { id: 'mod_133', nome: 'C10', montadoraId: 'm_chevrolet' },
+      { id: 'mod_134', nome: 'C20', montadoraId: 'm_chevrolet' },
+      { id: 'mod_135', nome: 'C14', montadoraId: 'm_chevrolet' },
+      { id: 'mod_136', nome: 'AX', montadoraId: 'm_citroen' },
+      { id: 'mod_137', nome: 'ZX', montadoraId: 'm_citroen' },
+      { id: 'mod_138', nome: 'XSARA', montadoraId: 'm_citroen' },
+      { id: 'mod_139', nome: 'XSARA PICASSO', montadoraId: 'm_citroen' },
+      { id: 'mod_140', nome: 'C3', montadoraId: 'm_citroen' },
+      { id: 'mod_141', nome: 'C3 PICASSO', montadoraId: 'm_citroen' },
+      { id: 'mod_143', nome: 'C3 AIRCROSS', montadoraId: 'm_citroen' },
+      { id: 'mod_144', nome: 'C4', montadoraId: 'm_citroen' },
+      { id: 'mod_145', nome: 'C4 PALLAS', montadoraId: 'm_citroen' },
+      { id: 'mod_146', nome: 'C4 LOUNGE', montadoraId: 'm_citroen' },
+      { id: 'mod_147', nome: 'C4 CACTUS', montadoraId: 'm_citroen' },
+      { id: 'mod_148', nome: 'C4 PICASSO', montadoraId: 'm_citroen' },
+      { id: 'mod_149', nome: 'C5', montadoraId: 'm_citroen' },
+      { id: 'mod_150', nome: 'C5 AIRCROSS', montadoraId: 'm_citroen' },
+      { id: 'mod_151', nome: 'C6', montadoraId: 'm_citroen' },
+      { id: 'mod_152', nome: 'BERLINGO', montadoraId: 'm_citroen' },
+      { id: 'mod_153', nome: 'JUMPER', montadoraId: 'm_citroen' },
+      { id: 'mod_155', nome: '147', montadoraId: 'm_fiat' },
+      { id: 'mod_159', nome: 'UNO', montadoraId: 'm_fiat' },
+      { id: 'mod_160', nome: 'ELBA', montadoraId: 'm_fiat' },
+      { id: 'mod_161', nome: 'PREMIO', montadoraId: 'm_fiat' },
+      { id: 'mod_162', nome: 'TEMPRA', montadoraId: 'm_fiat' },
+      { id: 'mod_163', nome: 'TIPO', montadoraId: 'm_fiat' },
+      { id: 'mod_164', nome: 'MAREA', montadoraId: 'm_fiat' },
+      { id: 'mod_165', nome: 'MAREA WEEKEND', montadoraId: 'm_fiat' },
+      { id: 'mod_166', nome: 'PALIO', montadoraId: 'm_fiat' },
+      { id: 'mod_167', nome: 'PALIO WEEKEND', montadoraId: 'm_fiat' },
+      { id: 'mod_168', nome: 'SIENA', montadoraId: 'm_fiat' },
+      { id: 'mod_169', nome: 'STRADA', montadoraId: 'm_fiat' },
+      { id: 'mod_170', nome: 'BRAVA', montadoraId: 'm_fiat' },
+      { id: 'mod_171', nome: 'STILO', montadoraId: 'm_fiat' },
+      { id: 'mod_172', nome: 'DOBLÒ', montadoraId: 'm_fiat' },
+      { id: 'mod_173', nome: 'IDEA', montadoraId: 'm_fiat' },
+      { id: 'mod_174', nome: 'PUNTO', montadoraId: 'm_fiat' },
+      { id: 'mod_175', nome: 'LINEA', montadoraId: 'm_fiat' },
+      { id: 'mod_176', nome: '500', montadoraId: 'm_fiat' },
+      { id: 'mod_177', nome: 'FREEMONT', montadoraId: 'm_fiat' },
+      { id: 'mod_178', nome: 'GRAND SIENA', montadoraId: 'm_fiat' },
+      { id: 'mod_179', nome: 'MOBI', montadoraId: 'm_fiat' },
+      { id: 'mod_180', nome: 'ARGO', montadoraId: 'm_fiat' },
+      { id: 'mod_181', nome: 'CRONOS', montadoraId: 'm_fiat' },
+      { id: 'mod_182', nome: 'TORO', montadoraId: 'm_fiat' },
+      { id: 'mod_183', nome: 'FASTBACK', montadoraId: 'm_fiat' },
+      { id: 'mod_184', nome: 'PULSE', montadoraId: 'm_fiat' },
+      { id: 'mod_186', nome: 'FIORINO', montadoraId: 'm_fiat' },
+      { id: 'mod_187', nome: 'DUCATO', montadoraId: 'm_fiat' },
+      { id: 'mod_188', nome: 'SCUDO', montadoraId: 'm_fiat' },
+      { id: 'mod_190', nome: 'CORCEL', montadoraId: 'm_ford' },
+      { id: 'mod_192', nome: 'DEL REY', montadoraId: 'm_ford' },
+      { id: 'mod_193', nome: 'BELINA', montadoraId: 'm_ford' },
+      { id: 'mod_194', nome: 'PAMPA', montadoraId: 'm_ford' },
+      { id: 'mod_195', nome: 'ESCORT', montadoraId: 'm_ford' },
+      { id: 'mod_196', nome: 'VERONA', montadoraId: 'm_ford' },
+      { id: 'mod_197', nome: 'VERSAILLES', montadoraId: 'm_ford' },
+      { id: 'mod_199', nome: 'FIESTA', montadoraId: 'm_ford' },
+      { id: 'mod_200', nome: 'KA', montadoraId: 'm_ford' },
+      { id: 'mod_201', nome: 'COURIER', montadoraId: 'm_ford' },
+      { id: 'mod_202', nome: 'FOCUS', montadoraId: 'm_ford' },
+      { id: 'mod_203', nome: 'MONDEO', montadoraId: 'm_ford' },
+      { id: 'mod_204', nome: 'FUSION', montadoraId: 'm_ford' },
+      { id: 'mod_205', nome: 'TAURUS', montadoraId: 'm_ford' },
+      { id: 'mod_206', nome: 'ECOSPORT', montadoraId: 'm_ford' },
+      { id: 'mod_207', nome: 'EDGE', montadoraId: 'm_ford' },
+      { id: 'mod_208', nome: 'TERRITORY', montadoraId: 'm_ford' },
+      { id: 'mod_209', nome: 'MAVERICK', montadoraId: 'm_ford' },
+      { id: 'mod_210', nome: 'RANGER', montadoraId: 'm_ford' },
+      { id: 'mod_211', nome: 'F-100', montadoraId: 'm_ford' },
+      { id: 'mod_212', nome: 'F-1000', montadoraId: 'm_ford' },
+      { id: 'mod_213', nome: 'F-150', montadoraId: 'm_ford' },
+      { id: 'mod_214', nome: 'F-250', montadoraId: 'm_ford' },
+      { id: 'mod_215', nome: 'F-350', montadoraId: 'm_ford' },
+      { id: 'mod_216', nome: 'F-4000', montadoraId: 'm_ford' },
+      { id: 'mod_217', nome: 'CARGO', montadoraId: 'm_ford' },
+      { id: 'mod_218', nome: 'TRANSIT', montadoraId: 'm_ford' },
+      { id: 'mod_219', nome: 'ACCORD', montadoraId: 'm_honda' },
+      { id: 'mod_220', nome: 'CIVIC', montadoraId: 'm_honda' },
+      { id: 'mod_221', nome: 'CITY', montadoraId: 'm_honda' },
+      { id: 'mod_222', nome: 'FIT', montadoraId: 'm_honda' },
+      { id: 'mod_224', nome: 'CR-V', montadoraId: 'm_honda' },
+      { id: 'mod_225', nome: 'HR-V', montadoraId: 'm_honda' },
+      { id: 'mod_226', nome: 'WR-V', montadoraId: 'm_honda' },
+      { id: 'mod_227', nome: 'ZR-V', montadoraId: 'm_honda' },
+      { id: 'mod_228', nome: 'CR-Z', montadoraId: 'm_honda' },
+      { id: 'mod_229', nome: 'CIVIC COUPE', montadoraId: 'm_honda' },
+      { id: 'mod_230', nome: 'CIVIC SI', montadoraId: 'm_honda' },
+      { id: 'mod_235', nome: 'ELANTRA', montadoraId: 'm_hyundai' },
+      { id: 'mod_236', nome: 'SONATA', montadoraId: 'm_hyundai' },
+      { id: 'mod_237', nome: 'AZERA', montadoraId: 'm_hyundai' },
+      { id: 'mod_239', nome: 'VELOSTER', montadoraId: 'm_hyundai' },
+      { id: 'mod_240', nome: 'I30', montadoraId: 'm_hyundai' },
+      { id: 'mod_241', nome: 'I30 CW', montadoraId: 'm_hyundai' },
+      { id: 'mod_242', nome: 'HB20', montadoraId: 'm_hyundai' },
+      { id: 'mod_245', nome: 'CRETA', montadoraId: 'm_hyundai' },
+      { id: 'mod_246', nome: 'TUCSON', montadoraId: 'm_hyundai' },
+      { id: 'mod_247', nome: 'IX35', montadoraId: 'm_hyundai' },
+      { id: 'mod_248', nome: 'SANTA FE', montadoraId: 'm_hyundai' },
+      { id: 'mod_249', nome: 'VERACRUZ', montadoraId: 'm_hyundai' },
+      { id: 'mod_252', nome: 'HR', montadoraId: 'm_hyundai' },
+      { id: 'mod_253', nome: 'H-100', montadoraId: 'm_hyundai' },
+      { id: 'mod_254', nome: 'J2', montadoraId: 'm_jac' },
+      { id: 'mod_255', nome: 'J3', montadoraId: 'm_jac' },
+      { id: 'mod_256', nome: 'J3 TURIN', montadoraId: 'm_jac' },
+      { id: 'mod_257', nome: 'J5', montadoraId: 'm_jac' },
+      { id: 'mod_258', nome: 'J6', montadoraId: 'm_jac' },
+      { id: 'mod_259', nome: 'J7', montadoraId: 'm_jac' },
+      { id: 'mod_260', nome: 'T40', montadoraId: 'm_jac' },
+      { id: 'mod_261', nome: 'T50', montadoraId: 'm_jac' },
+      { id: 'mod_262', nome: 'T60', montadoraId: 'm_jac' },
+      { id: 'mod_263', nome: 'T80', montadoraId: 'm_jac' },
+      { id: 'mod_264', nome: 'T8', montadoraId: 'm_jac' },
+      { id: 'mod_265', nome: 'V260', montadoraId: 'm_jac' },
+      { id: 'mod_266', nome: 'V330', montadoraId: 'm_jac' },
+      { id: 'mod_267', nome: 'JAC IEV20', montadoraId: 'm_jac' },
+      { id: 'mod_268', nome: 'JAC IEV40', montadoraId: 'm_jac' },
+      { id: 'mod_269', nome: 'JAC E-JS1', montadoraId: 'm_jac' },
+      { id: 'mod_270', nome: 'JAC E-JS4', montadoraId: 'm_jac' },
+      { id: 'mod_271', nome: 'JAC E-J7', montadoraId: 'm_jac' },
+      { id: 'mod_275', nome: 'CHEROKEE', montadoraId: 'm_jeep' },
+      { id: 'mod_277', nome: 'WRANGLER', montadoraId: 'm_jeep' },
+      { id: 'mod_278', nome: 'RENEGADE', montadoraId: 'm_jeep' },
+      { id: 'mod_279', nome: 'COMPASS', montadoraId: 'm_jeep' },
+      { id: 'mod_280', nome: 'COMMANDER', montadoraId: 'm_jeep' },
+      { id: 'mod_293', nome: 'BESTA', montadoraId: 'm_kia' },
+      { id: 'mod_294', nome: 'BONGO', montadoraId: 'm_kia' },
+      { id: 'mod_295', nome: 'SPORTAGE', montadoraId: 'm_kia' },
+      { id: 'mod_296', nome: 'CARNIVAL', montadoraId: 'm_kia' },
+      { id: 'mod_297', nome: 'CARENS', montadoraId: 'm_kia' },
+      { id: 'mod_298', nome: 'CERATO', montadoraId: 'm_kia' },
+      { id: 'mod_299', nome: 'PICANTO', montadoraId: 'm_kia' },
+      { id: 'mod_300', nome: 'RIO', montadoraId: 'm_kia' },
+      { id: 'mod_301', nome: 'SOUL', montadoraId: 'm_kia' },
+      { id: 'mod_302', nome: 'SORENTO', montadoraId: 'm_kia' },
+      { id: 'mod_303', nome: 'MOHAVE', montadoraId: 'm_kia' },
+      { id: 'mod_304', nome: 'OPTIMA', montadoraId: 'm_kia' },
+      { id: 'mod_309', nome: 'CLASSE A', montadoraId: 'm_mercedes_benz' },
+      { id: 'mod_310', nome: 'CLASSE B', montadoraId: 'm_mercedes_benz' },
+      { id: 'mod_311', nome: 'CLASSE C', montadoraId: 'm_mercedes_benz' },
+      { id: 'mod_312', nome: 'CLASSE E', montadoraId: 'm_mercedes_benz' },
+      { id: 'mod_313', nome: 'CLASSE S', montadoraId: 'm_mercedes_benz' },
+      { id: 'mod_314', nome: 'CLASSE CLA', montadoraId: 'm_mercedes_benz' },
+      { id: 'mod_315', nome: 'CLASSE CLS', montadoraId: 'm_mercedes_benz' },
+      { id: 'mod_316', nome: 'CLASSE CLK', montadoraId: 'm_mercedes_benz' },
+      { id: 'mod_317', nome: 'CLASSE SLK', montadoraId: 'm_mercedes_benz' },
+      { id: 'mod_318', nome: 'CLASSE SL', montadoraId: 'm_mercedes_benz' },
+      { id: 'mod_319', nome: 'CLASSE G', montadoraId: 'm_mercedes_benz' },
+      { id: 'mod_320', nome: 'CLASSE GLA', montadoraId: 'm_mercedes_benz' },
+      { id: 'mod_321', nome: 'CLASSE GLB', montadoraId: 'm_mercedes_benz' },
+      { id: 'mod_322', nome: 'CLASSE GLC', montadoraId: 'm_mercedes_benz' },
+      { id: 'mod_323', nome: 'CLASSE GLE', montadoraId: 'm_mercedes_benz' },
+      { id: 'mod_324', nome: 'CLASSE GLS', montadoraId: 'm_mercedes_benz' },
+      { id: 'mod_329', nome: 'VITO', montadoraId: 'm_mercedes_benz' },
+      { id: 'mod_330', nome: 'SPRINTER', montadoraId: 'm_mercedes_benz' },
+      { id: 'mod_343', nome: 'L200', montadoraId: 'm_mitsubishi' },
+      { id: 'mod_345', nome: 'PAJERO', montadoraId: 'm_mitsubishi' },
+      { id: 'mod_349', nome: 'PAJERO TR4', montadoraId: 'm_mitsubishi' },
+      { id: 'mod_350', nome: 'OUTLANDER', montadoraId: 'm_mitsubishi' },
+      { id: 'mod_352', nome: 'ASX', montadoraId: 'm_mitsubishi' },
+      { id: 'mod_353', nome: 'ECLIPSE', montadoraId: 'm_mitsubishi' },
+      { id: 'mod_355', nome: '3000GT', montadoraId: 'm_mitsubishi' },
+      { id: 'mod_356', nome: 'GALANT', montadoraId: 'm_mitsubishi' },
+      { id: 'mod_357', nome: 'LANCER', montadoraId: 'm_mitsubishi' },
+      { id: 'mod_359', nome: 'SPACE WAGON', montadoraId: 'm_mitsubishi' },
+      { id: 'mod_360', nome: 'SENTRA', montadoraId: 'm_nissan' },
+      { id: 'mod_361', nome: 'ALTIMA', montadoraId: 'm_nissan' },
+      { id: 'mod_362', nome: 'MAXIMA', montadoraId: 'm_nissan' },
+      { id: 'mod_363', nome: 'VERSA', montadoraId: 'm_nissan' },
+      { id: 'mod_364', nome: 'MARCH', montadoraId: 'm_nissan' },
+      { id: 'mod_365', nome: 'LIVINA', montadoraId: 'm_nissan' },
+      { id: 'mod_367', nome: 'KICKS', montadoraId: 'm_nissan' },
+      { id: 'mod_369', nome: 'FRONTIER', montadoraId: 'm_nissan' },
+      { id: 'mod_370', nome: 'XTERRA', montadoraId: 'm_nissan' },
+      { id: 'mod_371', nome: 'PATHFINDER', montadoraId: 'm_nissan' },
+      { id: 'mod_372', nome: '370Z', montadoraId: 'm_nissan' },
+      { id: 'mod_373', nome: '350Z', montadoraId: 'm_nissan' },
+      { id: 'mod_374', nome: 'GT-R', montadoraId: 'm_nissan' },
+      { id: 'mod_375', nome: 'LEAF', montadoraId: 'm_nissan' },
+      { id: 'mod_376', nome: 'TIIDA', montadoraId: 'm_nissan' },
+      { id: 'mod_377', nome: 'TIIDA SEDAN', montadoraId: 'm_nissan' },
+      { id: 'mod_379', nome: 'ORA 03', montadoraId: 'm_ora' },
+      { id: 'mod_380', nome: 'ORA 03 SKIN', montadoraId: 'm_ora' },
+      { id: 'mod_381', nome: 'ORA 03 GT', montadoraId: 'm_ora' },
+      { id: 'mod_382', nome: 'OMODA 5', montadoraId: 'm_omoda' },
+      { id: 'mod_383', nome: 'OMODA C5', montadoraId: 'm_omoda' },
+      { id: 'mod_384', nome: 'OMODA E5', montadoraId: 'm_omoda' },
+      { id: 'mod_385', nome: '106', montadoraId: 'm_peugeot' },
+      { id: 'mod_386', nome: '205', montadoraId: 'm_peugeot' },
+      { id: 'mod_387', nome: '206', montadoraId: 'm_peugeot' },
+      { id: 'mod_388', nome: '207', montadoraId: 'm_peugeot' },
+      { id: 'mod_389', nome: '208', montadoraId: 'm_peugeot' },
+      { id: 'mod_390', nome: '306', montadoraId: 'm_peugeot' },
+      { id: 'mod_391', nome: '307', montadoraId: 'm_peugeot' },
+      { id: 'mod_392', nome: '308', montadoraId: 'm_peugeot' },
+      { id: 'mod_393', nome: '408', montadoraId: 'm_peugeot' },
+      { id: 'mod_394', nome: '407', montadoraId: 'm_peugeot' },
+      { id: 'mod_395', nome: '508', montadoraId: 'm_peugeot' },
+      { id: 'mod_396', nome: '2008', montadoraId: 'm_peugeot' },
+      { id: 'mod_397', nome: '3008', montadoraId: 'm_peugeot' },
+      { id: 'mod_398', nome: '5008', montadoraId: 'm_peugeot' },
+      { id: 'mod_399', nome: 'PARTNER', montadoraId: 'm_peugeot' },
+      { id: 'mod_400', nome: 'HOGGAR', montadoraId: 'm_peugeot' },
+      { id: 'mod_401', nome: 'EXPERT', montadoraId: 'm_peugeot' },
+      { id: 'mod_402', nome: 'BOXER', montadoraId: 'm_peugeot' },
+      { id: 'mod_403', nome: 'RCZ', montadoraId: 'm_peugeot' },
+      { id: 'mod_404', nome: 'RAM 1500', montadoraId: 'm_ram' },
+      { id: 'mod_405', nome: 'RAM 1500 CLASSIC', montadoraId: 'm_ram' },
+      { id: 'mod_406', nome: 'RAM 1500 REBEL', montadoraId: 'm_ram' },
+      { id: 'mod_407', nome: 'RAM 1500 LIMITED', montadoraId: 'm_ram' },
+      { id: 'mod_408', nome: 'RAM 2500', montadoraId: 'm_ram' },
+      { id: 'mod_409', nome: 'RAM 3500', montadoraId: 'm_ram' },
+      { id: 'mod_410', nome: 'RAM RAMPAGE', montadoraId: 'm_ram' },
+      { id: 'mod_411', nome: 'RAM 4500', montadoraId: 'm_ram' },
+      { id: 'mod_412', nome: 'RAM 5500', montadoraId: 'm_ram' },
+      { id: 'mod_413', nome: 'R9', montadoraId: 'm_renault' },
+      { id: 'mod_414', nome: 'R11', montadoraId: 'm_renault' },
+      { id: 'mod_415', nome: 'R19', montadoraId: 'm_renault' },
+      { id: 'mod_416', nome: 'CLIO', montadoraId: 'm_renault' },
+      { id: 'mod_417', nome: 'CLIO SEDAN', montadoraId: 'm_renault' },
+      { id: 'mod_418', nome: 'MEGANE', montadoraId: 'm_renault' },
+      { id: 'mod_420', nome: 'SCENIC', montadoraId: 'm_renault' },
+      { id: 'mod_421', nome: 'LAGUNA', montadoraId: 'm_renault' },
+      { id: 'mod_422', nome: 'FLUENCE', montadoraId: 'm_renault' },
+      { id: 'mod_423', nome: 'LOGAN', montadoraId: 'm_renault' },
+      { id: 'mod_424', nome: 'SANDERO', montadoraId: 'm_renault' },
+      { id: 'mod_426', nome: 'DUSTER', montadoraId: 'm_renault' },
+      { id: 'mod_428', nome: 'CAPTUR', montadoraId: 'm_renault' },
+      { id: 'mod_429', nome: 'KWID', montadoraId: 'm_renault' },
+      { id: 'mod_430', nome: 'MASTER', montadoraId: 'm_renault' },
+      { id: 'mod_431', nome: 'KANGOO', montadoraId: 'm_renault' },
+      { id: 'mod_432', nome: 'OROCH', montadoraId: 'm_renault' },
+      { id: 'mod_433', nome: 'MUSSO', montadoraId: 'm_ssangyong' },
+      { id: 'mod_434', nome: 'KORANDO', montadoraId: 'm_ssangyong' },
+      { id: 'mod_435', nome: 'REXTON', montadoraId: 'm_ssangyong' },
+      { id: 'mod_436', nome: 'ACTYON', montadoraId: 'm_ssangyong' },
+      { id: 'mod_437', nome: 'ACTYON SPORTS', montadoraId: 'm_ssangyong' },
+      { id: 'mod_438', nome: 'KYRON', montadoraId: 'm_ssangyong' },
+      { id: 'mod_439', nome: 'RODIUS', montadoraId: 'm_ssangyong' },
+      { id: 'mod_440', nome: 'TIVOLI', montadoraId: 'm_ssangyong' },
+      { id: 'mod_441', nome: 'XLV', montadoraId: 'm_ssangyong' },
+      { id: 'mod_442', nome: 'CHAIRMAN', montadoraId: 'm_ssangyong' },
+      { id: 'mod_444', nome: 'VITARA', montadoraId: 'm_suzuki' },
+      { id: 'mod_446', nome: 'JIMNY', montadoraId: 'm_suzuki' },
+      { id: 'mod_448', nome: 'SX4', montadoraId: 'm_suzuki' },
+      { id: 'mod_449', nome: 'S-CROSS', montadoraId: 'm_suzuki' },
+      { id: 'mod_450', nome: 'SWIFT', montadoraId: 'm_suzuki' },
+      { id: 'mod_455', nome: 'BANDEIRANTE', montadoraId: 'm_toyota' },
+      { id: 'mod_456', nome: 'COROLLA', montadoraId: 'm_toyota' },
+      { id: 'mod_457', nome: 'COROLLA FIELDER', montadoraId: 'm_toyota' },
+      { id: 'mod_458', nome: 'COROLLA CROSS', montadoraId: 'm_toyota' },
+      { id: 'mod_459', nome: 'CAMRY', montadoraId: 'm_toyota' },
+      { id: 'mod_460', nome: 'CELICA', montadoraId: 'm_toyota' },
+      { id: 'mod_461', nome: 'SUPRA', montadoraId: 'm_toyota' },
+      { id: 'mod_463', nome: 'ETIOS', montadoraId: 'm_toyota' },
+      { id: 'mod_464', nome: 'ETIOS SEDAN', montadoraId: 'm_toyota' },
+      { id: 'mod_465', nome: 'YARIS', montadoraId: 'm_toyota' },
+      { id: 'mod_466', nome: 'YARIS SEDAN', montadoraId: 'm_toyota' },
+      { id: 'mod_467', nome: 'PRIUS', montadoraId: 'm_toyota' },
+      { id: 'mod_468', nome: 'RAV4', montadoraId: 'm_toyota' },
+      { id: 'mod_469', nome: 'HILUX', montadoraId: 'm_toyota' },
+      { id: 'mod_470', nome: 'SW4', montadoraId: 'm_toyota' },
+      { id: 'mod_475', nome: 'T4', montadoraId: 'm_troller' },
+      { id: 'mod_476', nome: 'T4 BOLD', montadoraId: 'm_troller' },
+      { id: 'mod_477', nome: 'PANTANAL', montadoraId: 'm_troller' },
+      { id: 'mod_478', nome: 'RF SPORT', montadoraId: 'm_troller' },
+      { id: 'mod_479', nome: 'FUSCA', montadoraId: 'm_volkswagen' },
+      { id: 'mod_480', nome: 'BRASÍLIA', montadoraId: 'm_volkswagen' },
+      { id: 'mod_481', nome: 'KOMBI', montadoraId: 'm_volkswagen' },
+      { id: 'mod_482', nome: 'GOL', montadoraId: 'm_volkswagen' },
+      { id: 'mod_483', nome: 'PARATI', montadoraId: 'm_volkswagen' },
+      { id: 'mod_484', nome: 'SAVEIRO', montadoraId: 'm_volkswagen' },
+      { id: 'mod_485', nome: 'VOYAGE', montadoraId: 'm_volkswagen' },
+      { id: 'mod_486', nome: 'SANTANA', montadoraId: 'm_volkswagen' },
+      { id: 'mod_487', nome: 'QUANTUM', montadoraId: 'm_volkswagen' },
+      { id: 'mod_488', nome: 'APOLLO', montadoraId: 'm_volkswagen' },
+      { id: 'mod_489', nome: 'LOGUS', montadoraId: 'm_volkswagen' },
+      { id: 'mod_490', nome: 'POINTER', montadoraId: 'm_volkswagen' },
+      { id: 'mod_491', nome: 'PASSAT', montadoraId: 'm_volkswagen' },
+      { id: 'mod_492', nome: 'BORA', montadoraId: 'm_volkswagen' },
+      { id: 'mod_493', nome: 'GOLF', montadoraId: 'm_volkswagen' },
+      { id: 'mod_494', nome: 'FOX', montadoraId: 'm_volkswagen' },
+      { id: 'mod_495', nome: 'CROSSFOX', montadoraId: 'm_volkswagen' },
+      { id: 'mod_496', nome: 'SPACEFOX', montadoraId: 'm_volkswagen' },
+      { id: 'mod_497', nome: 'POLO', montadoraId: 'm_volkswagen' },
+      { id: 'mod_498', nome: 'POLO SEDAN', montadoraId: 'm_volkswagen' },
+      { id: 'mod_499', nome: 'JETTA', montadoraId: 'm_volkswagen' },
+      { id: 'mod_500', nome: 'VIRTUS', montadoraId: 'm_volkswagen' },
+      { id: 'mod_501', nome: 'UP!', montadoraId: 'm_volkswagen' },
+      { id: 'mod_502', nome: 'NIVUS', montadoraId: 'm_volkswagen' },
+      { id: 'mod_503', nome: 'T-CROSS', montadoraId: 'm_volkswagen' },
+      { id: 'mod_504', nome: 'TAOS', montadoraId: 'm_volkswagen' },
+      { id: 'mod_505', nome: 'TIGUAN', montadoraId: 'm_volkswagen' },
+      { id: 'mod_506', nome: 'TOUAREG', montadoraId: 'm_volkswagen' },
+      { id: 'mod_508', nome: 'AMAROK', montadoraId: 'm_volkswagen' },
+      { id: 'mod_512', nome: '12.170', montadoraId: 'm_volkswagen' },
+      { id: 'mod_513', nome: '13.180', montadoraId: 'm_volkswagen' },
+      { id: 'mod_514', nome: '15.180', montadoraId: 'm_volkswagen' },
+      { id: 'mod_515', nome: '17.210', montadoraId: 'm_volkswagen' },
+      { id: 'mod_516', nome: '17.250', montadoraId: 'm_volkswagen' },
+      { id: 'mod_517', nome: 'C30', montadoraId: 'm_volvo' },
+      { id: 'mod_518', nome: 'C40', montadoraId: 'm_volvo' },
+      { id: 'mod_519', nome: 'S40', montadoraId: 'm_volvo' },
+      { id: 'mod_520', nome: 'S60', montadoraId: 'm_volvo' },
+      { id: 'mod_521', nome: 'S80', montadoraId: 'm_volvo' },
+      { id: 'mod_522', nome: 'S90', montadoraId: 'm_volvo' },
+      { id: 'mod_523', nome: 'V40', montadoraId: 'm_volvo' },
+      { id: 'mod_524', nome: 'V50', montadoraId: 'm_volvo' },
+      { id: 'mod_525', nome: 'V60', montadoraId: 'm_volvo' },
+      { id: 'mod_526', nome: 'V70', montadoraId: 'm_volvo' },
+      { id: 'mod_527', nome: 'XC40', montadoraId: 'm_volvo' },
+      { id: 'mod_528', nome: 'XC60', montadoraId: 'm_volvo' },
+      { id: 'mod_529', nome: 'XC70', montadoraId: 'm_volvo' },
+      { id: 'mod_530', nome: 'XC90', montadoraId: 'm_volvo' },
+      { id: 'mod_531', nome: 'EX30', montadoraId: 'm_volvo' },
+      { id: 'mod_532', nome: 'EX40', montadoraId: 'm_volvo' },
+      { id: 'mod_533', nome: 'EX90', montadoraId: 'm_volvo' },
+      { id: 'moto_341', nome: 'BOXER 100', montadoraId: 'm_bajaj' },
+      { id: 'moto_342', nome: 'DOMINAR 250', montadoraId: 'm_bajaj' },
+      { id: 'moto_343', nome: 'DOMINAR 400', montadoraId: 'm_bajaj' },
+      { id: 'moto_344', nome: 'PULSAR 200 NS', montadoraId: 'm_bajaj' },
+      { id: 'moto_345', nome: 'APACHE RTR 150', montadoraId: 'm_dafra' },
+      { id: 'moto_346', nome: 'CITYCOM 300I', montadoraId: 'm_dafra' },
+      { id: 'moto_347', nome: 'KANSAS 150', montadoraId: 'm_dafra' },
+      { id: 'moto_348', nome: 'NEXT 250', montadoraId: 'm_dafra' },
+      { id: 'moto_349', nome: 'NH 190', montadoraId: 'm_dafra' },
+      { id: 'moto_350', nome: 'ZIG 50', montadoraId: 'm_dafra' },
+      { id: 'moto_351', nome: 'NINJA 300', montadoraId: 'm_kawasaki' },
+      { id: 'moto_352', nome: 'NINJA 400', montadoraId: 'm_kawasaki' },
+      { id: 'moto_353', nome: 'NINJA 650', montadoraId: 'm_kawasaki' },
+      { id: 'moto_354', nome: 'NINJA ZX-6R', montadoraId: 'm_kawasaki' },
+      { id: 'moto_355', nome: 'NINJA ZX-10R', montadoraId: 'm_kawasaki' },
+      { id: 'moto_356', nome: 'VERSYS 300', montadoraId: 'm_kawasaki' },
+      { id: 'moto_357', nome: 'VERSYS 650', montadoraId: 'm_kawasaki' },
+      { id: 'moto_358', nome: 'Z300', montadoraId: 'm_kawasaki' },
+      { id: 'moto_359', nome: 'Z400', montadoraId: 'm_kawasaki' },
+      { id: 'moto_360', nome: 'Z650', montadoraId: 'm_kawasaki' },
+      { id: 'moto_361', nome: '200 DUKE', montadoraId: 'm_ktm' },
+      { id: 'moto_362', nome: '390 DUKE', montadoraId: 'm_ktm' },
+      { id: 'moto_363', nome: '690 DUKE', montadoraId: 'm_ktm' },
+      { id: 'moto_364', nome: '790 DUKE', montadoraId: 'm_ktm' },
+      { id: 'moto_365', nome: '890 DUKE', montadoraId: 'm_ktm' },
+      { id: 'moto_366', nome: '1290 SUPER DUKE', montadoraId: 'm_ktm' },
+      { id: 'moto_367', nome: '390 ADVENTURE', montadoraId: 'm_ktm' },
+      { id: 'moto_368', nome: 'CLASSIC 350', montadoraId: 'm_royal_enfield' },
+      { id: 'moto_369', nome: 'HUNTER 350', montadoraId: 'm_royal_enfield' },
+      { id: 'moto_370', nome: 'METEOR 350', montadoraId: 'm_royal_enfield' },
+      { id: 'moto_371', nome: 'BULLET 350', montadoraId: 'm_royal_enfield' },
+      { id: 'moto_372', nome: 'INTERCEPTOR 650', montadoraId: 'm_royal_enfield' },
+      { id: 'moto_373', nome: 'CONTINENTAL GT 650', montadoraId: 'm_royal_enfield' },
+      { id: 'moto_374', nome: 'HIMALAYAN', montadoraId: 'm_royal_enfield' },
+      { id: 'moto_375', nome: 'JET 50', montadoraId: 'm_shineray_motos' },
+      { id: 'moto_376', nome: 'PHOENIX 50', montadoraId: 'm_shineray_motos' },
+      { id: 'moto_377', nome: 'SHI 175', montadoraId: 'm_shineray_motos' },
+      { id: 'moto_378', nome: 'XY 50', montadoraId: 'm_shineray_motos' },
+      { id: 'moto_379', nome: 'YES 125', montadoraId: 'm_suzuki_motos' },
+      { id: 'moto_380', nome: 'INTRUDER 125', montadoraId: 'm_suzuki_motos' },
+      { id: 'moto_381', nome: 'BURGMAN 125', montadoraId: 'm_suzuki_motos' },
+      { id: 'moto_382', nome: 'GSX-R 750', montadoraId: 'm_suzuki_motos' },
+      { id: 'moto_383', nome: 'GSX-R 1000', montadoraId: 'm_suzuki_motos' },
+      { id: 'moto_384', nome: 'V-STROM 650', montadoraId: 'm_suzuki_motos' },
+      { id: 'moto_385', nome: 'V-STROM 1000', montadoraId: 'm_suzuki_motos' },
+      { id: 'moto_386', nome: 'SPEED TRIPLE', montadoraId: 'm_triumph' },
+      { id: 'moto_387', nome: 'STREET TRIPLE', montadoraId: 'm_triumph' },
+      { id: 'moto_388', nome: 'TIGER 800', montadoraId: 'm_triumph' },
+      { id: 'moto_389', nome: 'TIGER 900', montadoraId: 'm_triumph' },
+      { id: 'moto_390', nome: 'TIGER 1200', montadoraId: 'm_triumph' },
+      { id: 'moto_391', nome: 'BONNEVILLE T100', montadoraId: 'm_triumph' },
+      { id: 'moto_392', nome: 'BONNEVILLE T120', montadoraId: 'm_triumph' },
+      { id: 'moto_393', nome: 'FACTOR 125', montadoraId: 'm_yamaha' },
+      { id: 'moto_394', nome: 'FAZER 150', montadoraId: 'm_yamaha' },
+      { id: 'moto_395', nome: 'FAZER 250', montadoraId: 'm_yamaha' },
+      { id: 'moto_396', nome: 'LANDER 250', montadoraId: 'm_yamaha' },
+      { id: 'moto_397', nome: 'XTZ 125', montadoraId: 'm_yamaha' },
+      { id: 'moto_398', nome: 'XTZ 250', montadoraId: 'm_yamaha' },
+      { id: 'moto_399', nome: 'XT 660', montadoraId: 'm_yamaha' },
+      { id: 'moto_400', nome: 'MT-03', montadoraId: 'm_yamaha' },
+      { id: 'moto_401', nome: 'MT-07', montadoraId: 'm_yamaha' },
+      { id: 'moto_402', nome: 'MT-09', montadoraId: 'm_yamaha' },
+      { id: 'moto_403', nome: 'MT-10', montadoraId: 'm_yamaha' },
+      { id: 'moto_404', nome: 'NMAX 160', montadoraId: 'm_yamaha' },
+      { id: 'moto_405', nome: 'R3', montadoraId: 'm_yamaha' },
+      { id: 'moto_406', nome: 'R1', montadoraId: 'm_yamaha' },
+      { id: 'mod_honda_moto_001', nome: 'CG 125', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_006', nome: 'CG 150', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_010', nome: 'CG 160', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_014', nome: 'BIZ 100', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_015', nome: 'BIZ 110I', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_016', nome: 'BIZ 125', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_017', nome: 'POP 100', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_018', nome: 'POP 110I', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_019', nome: 'DREAM 100', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_020', nome: 'TODAY 125', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_021', nome: 'TURUNA 125', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_022', nome: 'ML 125', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_023', nome: 'XL 125', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_024', nome: 'XL 250R', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_025', nome: 'XLX 250R', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_026', nome: 'XLX 350R', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_027', nome: 'NX 125', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_028', nome: 'NX 150', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_029', nome: 'NX 200', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_030', nome: 'NX 350 SAHARA', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_031', nome: 'SAHARA 300', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_032', nome: 'NXR 125 BROS', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_033', nome: 'NXR 150 BROS', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_034', nome: 'NXR 160 BROS', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_035', nome: 'XR 200R', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_036', nome: 'XR 250 TORNADO', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_037', nome: 'XRE 190', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_038', nome: 'XRE 300', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_039', nome: 'XRE 300 SAHARA', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_040', nome: 'CB 400', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_041', nome: 'CB 450', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_042', nome: 'CBX 450', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_043', nome: 'CBX 450 SR', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_044', nome: 'CBX 750F', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_045', nome: 'CBX 750F INDY', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_046', nome: 'CBX 200 STRADA', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_047', nome: 'CBX 250 TWISTER', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_048', nome: 'CB 250F TWISTER', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_049', nome: 'CB 300R', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_050', nome: 'CB 300F TWISTER', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_051', nome: 'CB 500', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_052', nome: 'CB 500F', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_053', nome: 'CB 500X', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_054', nome: 'CB 500R', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_055', nome: 'NX 500', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_056', nome: 'CB 600F HORNET', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_057', nome: 'CB 650F', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_058', nome: 'CB 650R', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_059', nome: 'CB 1000R', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_060', nome: 'CB 1300', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_061', nome: 'CB 750 HORNET', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_062', nome: 'CBR 250R', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_063', nome: 'CBR 450SR', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_075', nome: 'FALCON NX4 400', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_076', nome: 'SHADOW VT', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_107', nome: 'PCX', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_110', nome: 'ADV', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_111', nome: 'ELITE', montadoraId: 'm_hondamotos' },
+      { id: 'mod_honda_moto_112', nome: 'LEAD', montadoraId: 'm_hondamotos' }
+    ];
+
+    const defaultCores = [
+      { id: 'c1', nome: 'BRANCA' },
+      { id: 'c2', nome: 'VERDE' },
+      { id: 'c3', nome: 'PRETA' },
+      { id: 'c4', nome: 'PRATA' },
+      { id: 'c5', nome: 'CINZA' },
+      { id: 'c6', nome: 'VERMELHA' },
+      { id: 'c7', nome: 'AZUL' },
+      { id: 'c8', nome: 'MARROM' },
+      { id: 'c9', nome: 'ROXA' },
+      { id: 'c10', nome: 'AMARELA' },
+      { id: 'c11', nome: 'LARANJA' }
+    ];
+
+    function sincronizarListaComPadrao(chaveStorage, listaPadrao) {
+      try {
+        const salvos = JSON.parse(Armazem.ls.getItem(chaveStorage));
+        const excluidos = JSON.parse(Armazem.ls.getItem(STORAGE_KEYS.DELETED_PREFIX + chaveStorage)) || [];
+        const setExcluidos = new Set(excluidos);
+
+        if (salvos && Array.isArray(salvos)) {
+          const mapa = new Map();
+          listaPadrao.forEach(item => {
+            if (!setExcluidos.has(item.id)) {
+              mapa.set(item.id, item);
+            }
+          });
+          salvos.forEach(item => {
+            if (!setExcluidos.has(item.id)) {
+              mapa.set(item.id, item);
+            }
+          });
+          const resultado = Array.from(mapa.values());
+          Armazem.ls.setItem(chaveStorage, JSON.stringify(resultado));
+          return resultado;
+        } else {
+          const filtrados = listaPadrao.filter(item => !setExcluidos.has(item.id));
+          Armazem.ls.setItem(chaveStorage, JSON.stringify(filtrados));
+          return filtrados;
+        }
+      } catch (_) {
+        return listaPadrao;
+      }
+    }
+
+    let montadoras = sincronizarListaComPadrao(STORAGE_KEYS.MONTADORAS, defaultMontadoras);
+    let modelos = sincronizarListaComPadrao(STORAGE_KEYS.MODELOS, defaultModelos);
+    let cores = sincronizarListaComPadrao(STORAGE_KEYS.CORES, defaultCores);
+    let registros = JSON.parse(Armazem.ls.getItem(STORAGE_KEYS.REGISTROS)) || [];
+    let currentImages = [];
+
+    let activeManagerType = ""; 
+    let editingItemId = null;
+    let editingOptionId = null;
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      const logo = document.getElementById('appLogo');
+      if (logo) logo.src = LOGO_DGAD_SUPORTE;
+
+      await migrarHistoricoAntigoParaIndexedDB();
+
+      loadHeaderData();
+      atualizarCamposNatureza();
+      renderSelects();
+      loadFormDraft();
+      renderRegistros();
+      renderizarGridPDFs();
+
+      const headerInputs = ['header-atividade', 'header-apoio', 'header-fase-forca-tarefa', 'header-estabelecimento', 'header-local', 'header-data'];
+      headerInputs.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.addEventListener('input', (e) => {
+            if (e.target.type === 'text') e.target.value = e.target.value.toUpperCase();
+            saveHeaderData();
+          });
+          el.addEventListener('change', () => {
+            saveHeaderData();
+          });
+        }
+      });
+
+      const formInputs = ['reg-montadora', 'reg-modelo-select', 'reg-cor', 'reg-placa', 'reg-has-plate'];
+      formInputs.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.addEventListener('input', (e) => {
+            if (e.target.type === 'text') e.target.value = e.target.value.toUpperCase();
+            if (!editingItemId) saveFormDraft();
+          });
+          el.addEventListener('change', () => {
+            if (!editingItemId) saveFormDraft();
+          });
+        }
+      });
+    });
+
+    function openLightbox(src) {
+      document.getElementById('lightbox-img').src = src;
+      document.getElementById('lightbox-modal').classList.add('active');
+    }
+
+    function closeLightbox() {
+      document.getElementById('lightbox-modal').classList.remove('active');
+      document.getElementById('lightbox-img').src = '';
+    }
+
+    function rolarCampoParaCentro(el, aoTerminar) {
+        if (!el || !el.getBoundingClientRect) {
+            if (aoTerminar) aoTerminar();
+            return;
+        }
+        const rect = el.getBoundingClientRect();
+        const meio = rect.top + window.pageYOffset - (window.innerHeight / 2) + (rect.height / 2);
+        window.scrollTo({ top: Math.max(0, meio), behavior: 'smooth' });
+        if (!aoTerminar) return;
+
+        // aguarda a rolagem suave terminar para só então executar a ação (colocar o cursor)
+        let ultimo = window.pageYOffset, estavel = 0, quadros = 0;
+        const acompanhar = () => {
+            quadros++;
+            const atual = window.pageYOffset;
+            estavel = Math.abs(atual - ultimo) < 1 ? estavel + 1 : 0;
+            ultimo = atual;
+            if (estavel >= 8 || quadros > 90) aoTerminar();
+            else requestAnimationFrame(acompanhar);
+        };
+        requestAnimationFrame(acompanhar);
+    }
+
+    function focarNoCampo(el) {
+        if (!el || !el.focus) return;
+        try { el.focus({ preventScroll: true }); } catch (_) { el.focus(); }
+        try { if (el.select && el.tagName !== 'SELECT') el.select(); } catch (_) {}
+    }
+
+    // Chamada SOMENTE depois que o alerta fechou: rola o campo para o meio da tela e então coloca o cursor
+    function irParaCampoAposAlerta(alvo, campo) {
+        setTimeout(() => {
+            rolarCampoParaCentro(alvo, () => focarNoCampo(campo));
+        }, 120);
+    }
+
+    function mostrarAlertaAviso(titulo, mensagemHTML, elementoParaFocar) {
+        const elementoAlvo = elementoParaFocar;
+        if (elementoParaFocar) {
+            elementoAlvo.style.outline = '4px solid #dc2626';
+            elementoAlvo.style.transition = 'outline 0.3s';
+        }
+
+        Swal.fire({
+            icon: 'warning',
+            title: titulo,
+            html: mensagemHTML,
+            confirmButtonText: 'OK',
+            confirmButtonColor: '#000000',
+            customClass: { popup: 'font-sans' },
+            returnFocus: false,
+            didClose: () => {
+                if (elementoParaFocar) {
+                    irParaCampoAposAlerta(elementoAlvo, elementoParaFocar);
+                    setTimeout(() => {
+                        if (elementoAlvo) elementoAlvo.style.outline = 'none';
+                    }, 2500);
+                }
+            }
+        });
+    }
+    
+    function perguntarResumoWhatsAppAntesDoPDF() {
+        Swal.fire({
+            icon: 'question',
+            title: 'RESUMO NO WHATSAPP',
+            html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> O <b>RESUMO NO WHATSAPP</b> JÁ FOI COMPARTILHADO?',
+            showCancelButton: true,
+            allowOutsideClick: false,
+            confirmButtonColor: '#000000',
+            cancelButtonColor: '#d33',
+            confirmButtonText: 'SIM, JÁ FOI',
+            cancelButtonText: 'NÃO, AINDA NÃO'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                gerarPDFPersonalizado();
+                return;
+            }
+            if (result.dismiss === Swal.DismissReason.cancel) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'COMPARTILHE O RESUMO PRIMEIRO',
+                    html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> O BOTÃO <b>"GERAR PDF"</b> SÓ É LIBERADO APÓS O COMPARTILHAMENTO DO <span class="text-red-600 font-bold">RESUMO NO WHATSAPP</span>!',
+                    showCancelButton: true,
+                    allowOutsideClick: false,
+                    confirmButtonColor: '#16a34a',
+                    cancelButtonColor: '#000000',
+                    confirmButtonText: 'COMPARTILHAR AGORA',
+                    cancelButtonText: 'FECHAR'
+                }).then((r2) => {
+                    if (r2.isConfirmed) compartilharResumo();
+                });
+            }
+        });
+    }
+
+    function sortAlphabetically(arr) {
+      return arr.sort((a, b) => a.nome.localeCompare(b.nome));
+    }
+
+    function ordenarMontadorasPersonalizado(arrMontadoras) {
+      const ordemPrioritaria = [
+        'CHEVROLET',
+        'FIAT',
+        'FORD',
+        'VOLKSWAGEN',
+        'CITROEN',
+        'HONDA',
+        'HYUNDAI',
+        'NISSAN',
+        'PEUGEOT',
+        'RENAULT',
+        'TOYOTA'
+      ];
+
+      function obterPrioridade(item) {
+        const nomeLimpo = (item.nome || '')
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toUpperCase();
+
+        for (let i = 0; i < ordemPrioritaria.length; i++) {
+          const termo = ordemPrioritaria[i];
+          if (nomeLimpo.startsWith(termo) || nomeLimpo === termo) {
+            return i;
+          }
+        }
+        return 9999;
+      }
+
+      return [...arrMontadoras].sort((a, b) => {
+        const prioA = obterPrioridade(a);
+        const prioB = obterPrioridade(b);
+
+        if (prioA !== prioB) {
+          return prioA - prioB;
+        }
+        return a.nome.localeCompare(b.nome);
+      });
+    }
+
+    function renderSelects() {
+      modelos = sortAlphabetically(modelos);
+      cores = sortAlphabetically(cores);
+
+      const selectMontadora = document.getElementById('reg-montadora');
+      const montadoraAtual = selectMontadora.value;
+      selectMontadora.innerHTML = '<option value="">SELECIONE A MONTADORA</option>';
+
+      const grupoCarros = ordenarMontadorasPersonalizado(montadoras.filter(m => m.tipo !== 'moto'));
+      const grupoMotos = sortAlphabetically(montadoras.filter(m => m.tipo === 'moto'));
+
+      if (grupoCarros.length > 0) {
+        const optgroupCarros = document.createElement('optgroup');
+        optgroupCarros.label = '🚗 VEÍCULOS / AUTOMÓVEIS';
+        grupoCarros.forEach(mont => {
+          const opt = document.createElement('option');
+          opt.value = mont.id;
+          opt.textContent = mont.nome.toUpperCase();
+          optgroupCarros.appendChild(opt);
+        });
+        selectMontadora.appendChild(optgroupCarros);
+      }
+
+      if (grupoMotos.length > 0) {
+        const optgroupMotos = document.createElement('optgroup');
+        optgroupMotos.label = '🏍️ MOTOCICLETAS';
+        grupoMotos.forEach(mont => {
+          const opt = document.createElement('option');
+          opt.value = mont.id;
+          opt.textContent = mont.nome.toUpperCase();
+          optgroupMotos.appendChild(opt);
+        });
+        selectMontadora.appendChild(optgroupMotos);
+      }
+
+      selectMontadora.value = montadoraAtual;
+
+      const selectCor = document.getElementById('reg-cor');
+      const corAtual = selectCor.value;
+      selectCor.innerHTML = '<option value="">SELECIONE A COR</option>';
+      cores.forEach(cor => {
+        const opt = document.createElement('option');
+        opt.value = cor.id;
+        opt.textContent = cor.nome.toUpperCase();
+        selectCor.appendChild(opt);
+      });
+      selectCor.value = corAtual;
+
+      popularModelosDropdown(selectMontadora.value);
+
+      try {
+        Armazem.ls.setItem(STORAGE_KEYS.MONTADORAS, JSON.stringify(montadoras));
+        Armazem.ls.setItem(STORAGE_KEYS.MODELOS, JSON.stringify(modelos));
+        Armazem.ls.setItem(STORAGE_KEYS.CORES, JSON.stringify(cores));
+      } catch (_) {}
+    }
+
+    function popularModelosDropdown(montadoraId, modeloSelecionadoId = '') {
+      const selectModelo = document.getElementById('reg-modelo-select');
+      const inputModelo = document.getElementById('reg-modelo');
+
+      if (!montadoraId) {
+        selectModelo.innerHTML = '<option value="">PRIMEIRO SELECIONE A MONTADORA</option>';
+        selectModelo.disabled = true;
+        inputModelo.value = '';
+        return;
+      }
+
+      const modelosFiltrados = modelos.filter(m => m.montadoraId === montadoraId);
+      
+      selectModelo.innerHTML = '<option value="">SELECIONE O MODELO</option>';
+      if (modelosFiltrados.length === 0) {
+        selectModelo.innerHTML = '<option value="">NENHUM MODELO CADASTRADO</option>';
+        selectModelo.disabled = true;
+        inputModelo.value = '';
+        return;
+      }
+
+      modelosFiltrados.forEach(mod => {
+        const opt = document.createElement('option');
+        opt.value = mod.id;
+        opt.textContent = mod.nome.toUpperCase();
+        selectModelo.appendChild(opt);
+      });
+
+      selectModelo.disabled = false;
+      if (modeloSelecionadoId) {
+        selectModelo.value = modeloSelecionadoId;
+        const modObj = modelos.find(m => m.id === modeloSelecionadoId);
+        inputModelo.value = modObj ? modObj.nome.toUpperCase() : '';
+      }
+    }
+
+    function aoMudarMontadora() {
+      const montadoraId = document.getElementById('reg-montadora').value;
+      popularModelosDropdown(montadoraId);
+      document.getElementById('reg-modelo').value = '';
+      if (!editingItemId) saveFormDraft();
+    }
+
+    function aoSelecionarModeloDropdown() {
+      const modeloId = document.getElementById('reg-modelo-select').value;
+      const inputModelo = document.getElementById('reg-modelo');
+      
+      const modEncontrado = modelos.find(m => m.id === modeloId);
+      if (modEncontrado) {
+        inputModelo.value = modEncontrado.nome.toUpperCase();
+      } else {
+        inputModelo.value = '';
+      }
+      if (!editingItemId) saveFormDraft();
+    }
+
+    function saveHeaderData() {
+      const data = {
+        atividade: document.getElementById('header-atividade').value.toUpperCase(),
+        apoio: document.getElementById('header-apoio').value.toUpperCase(),
+        fase: document.getElementById('header-fase-forca-tarefa').value.toUpperCase(),
+        estabelecimento: document.getElementById('header-estabelecimento').value.toUpperCase(),
+        local: document.getElementById('header-local').value.toUpperCase(),
+        data: document.getElementById('header-data').value
+      };
+      try {
+        Armazem.ls.setItem(STORAGE_KEYS.HEADER, JSON.stringify(data));
+      } catch (_) {}
+    }
+
+    function loadHeaderData() {
+      const saved = Armazem.ls.getItem(STORAGE_KEYS.HEADER);
+      if (saved) {
+        try {
+          const data = JSON.parse(saved);
+          document.getElementById('header-atividade').value = (data.atividade || '').toUpperCase();
+          document.getElementById('header-apoio').value = (data.apoio || '').toUpperCase();
+          document.getElementById('header-fase-forca-tarefa').value = (data.fase || '').toUpperCase();
+          document.getElementById('header-estabelecimento').value = (data.estabelecimento || '').toUpperCase();
+          document.getElementById('header-local').value = (data.local || '').toUpperCase();
+          document.getElementById('header-data').value = data.data || '';
+        } catch (_) {}
+      }
+    }
+
+    function saveFormDraft() {
+      if (editingItemId) return;
+      const draft = {
+        montadoraId: document.getElementById('reg-montadora').value,
+        modeloSelectId: document.getElementById('reg-modelo-select').value,
+        modeloNome: document.getElementById('reg-modelo').value.toUpperCase(),
+        corId: document.getElementById('reg-cor').value,
+        hasPlate: document.getElementById('reg-has-plate').checked,
+        placa: document.getElementById('reg-placa').value.toUpperCase(),
+        images: currentImages
+      };
+      try {
+        Armazem.ls.setItem(STORAGE_KEYS.FORM, JSON.stringify(draft));
+      } catch (_) {}
+    }
+
+    function loadFormDraft() {
+      if (editingItemId) return;
+      const saved = Armazem.ls.getItem(STORAGE_KEYS.FORM);
+      if (saved) {
+        try {
+          const draft = JSON.parse(saved);
+          document.getElementById('reg-montadora').value = draft.montadoraId || '';
+          popularModelosDropdown(draft.montadoraId || '', draft.modeloSelectId || '');
+          document.getElementById('reg-modelo').value = (draft.modeloNome || '').toUpperCase();
+          document.getElementById('reg-cor').value = draft.corId || '';
+          document.getElementById('reg-has-plate').checked = draft.hasPlate || false;
+          
+          togglePlateInput(false);
+          if(draft.hasPlate) {
+            document.getElementById('reg-placa').value = (draft.placa || '').toUpperCase();
+          }
+
+          if (Array.isArray(draft.images)) {
+            currentImages = draft.images;
+            renderImagePreviews();
+          } else if (draft.image) {
+            currentImages = [draft.image];
+            renderImagePreviews();
+          }
+        } catch (_) {}
+      }
+    }
+
+    function resetFormState() {
+      editingItemId = null;
+      document.getElementById('form-section-title').textContent = 'NOVA SUCATA';
+      document.getElementById('btn-cancel-edit').style.display = 'none';
+      document.getElementById('btn-salvar').textContent = 'CADASTRAR SUCATA';
+
+      document.getElementById('reg-montadora').value = '';
+      document.getElementById('reg-modelo-select').value = '';
+      document.getElementById('reg-modelo-select').disabled = true;
+      document.getElementById('reg-modelo-select').innerHTML = '<option value="">PRIMEIRO SELECIONE A MONTADORA</option>';
+      document.getElementById('reg-modelo').value = '';
+      document.getElementById('reg-cor').value = '';
+      document.getElementById('reg-has-plate').checked = false;
+      togglePlateInput(false);
+      currentImages = [];
+      renderImagePreviews();
+      Armazem.ls.removeItem(STORAGE_KEYS.FORM);
+    }
+
+    function cancelarEdicao() {
+      resetFormState();
+      loadFormDraft();
+    }
+
+    function togglePlateInput(resetText = true) {
+      const hasPlate = document.getElementById('reg-has-plate').checked;
+      const placaInput = document.getElementById('reg-placa');
+
+      if (hasPlate) {
+        placaInput.readOnly = false;
+        if(resetText) placaInput.value = '';
+        placaInput.placeholder = 'EX: ABC1D23 OU ABC1234';
+      } else {
+        placaInput.readOnly = true;
+        placaInput.value = 'SEM IDENTIFICAÇÃO';
+      }
+    }
+
+    function triggerCameraInput() {
+      if (currentImages.length >= 5) {
+        mostrarAlertaAviso('LIMITE DE IMAGENS', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> LIMITE MÁXIMO DE 5 IMAGENS POR SUCATA ATINGIDO!');
+        return;
+      }
+      document.getElementById('file-camera').click();
+    }
+
+    function triggerUploadInput() {
+      if (currentImages.length >= 5) {
+        mostrarAlertaAviso('LIMITE DE IMAGENS', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> LIMITE MÁXIMO DE 5 IMAGENS POR SUCATA ATINGIDO!');
+        return;
+      }
+      document.getElementById('file-upload').click();
+    }
+
+    function handleImageUpload(event) {
+      const files = Array.from(event.target.files);
+      if (!files.length) return;
+
+      const remainingSlots = 5 - currentImages.length;
+      if (files.length > remainingSlots) {
+        mostrarAlertaAviso('LIMITE DE IMAGENS', `<span class="text-amber-500 font-bold">ATENÇÃO:</span> VOCÊ SÓ PODE ADICIONAR NO MÁXIMO <span class="text-red-500 font-bold">${remainingSlots} IMAGENS</span>.`);
+      }
+
+      const filesToProcess = files.slice(0, remainingSlots);
+      let processedCount = 0;
+
+      filesToProcess.forEach(file => {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          const img = new Image();
+          img.src = e.target.result;
+          img.onload = function() {
+            const MAX_DIMENSION = 800; 
+            let width = img.width;
+            let height = img.height;
+
+            if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+              if (width > height) {
+                height = Math.round((height * MAX_DIMENSION) / width);
+                width = MAX_DIMENSION;
+              } else {
+                width = Math.round((width * MAX_DIMENSION) / height);
+                height = MAX_DIMENSION;
+              }
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+
+            const base64Resized = canvas.toDataURL('image/jpeg', 0.75);
+            currentImages.push(base64Resized);
+            
+            processedCount++;
+            if (processedCount === filesToProcess.length) {
+              renderImagePreviews();
+              if (!editingItemId) saveFormDraft();
+            }
+          };
+          img.onerror = function() {
+            processedCount++;
+            if (processedCount === filesToProcess.length) {
+              renderImagePreviews();
+              if (!editingItemId) saveFormDraft();
+            }
+          };
+        };
+        reader.readAsDataURL(file);
+      });
+
+      event.target.value = '';
+    }
+
+    function removeImage(index, event) {
+      if (event) event.stopPropagation();
+      currentImages.splice(index, 1);
+      renderImagePreviews();
+      if (!editingItemId) saveFormDraft();
+    }
+
+    function renderImagePreviews() {
+      const container = document.getElementById('preview-container');
+      const grid = document.getElementById('preview-grid');
+      const counter = document.getElementById('img-counter-label');
+
+      grid.innerHTML = '';
+      counter.textContent = `${currentImages.length} / 5 imagens anexadas`;
+
+      if (currentImages.length === 0) {
+        container.style.display = 'none';
+        return;
+      }
+
+      container.style.display = 'flex';
+      currentImages.forEach((imgSrc, idx) => {
+        const thumb = document.createElement('div');
+        thumb.className = 'preview-thumb-box';
+        thumb.onclick = () => openLightbox(imgSrc);
+        thumb.innerHTML = `
+          <img src="${imgSrc}" alt="Imagem ${idx + 1}">
+          <button class="preview-thumb-remove" type="button" onclick="removeImage(${idx}, event)" title="Remover">✕</button>
+        `;
+        grid.appendChild(thumb);
+      });
+    }
+
+    function rolarParaCardNovaSucata() {
+        const card = document.getElementById('form-card');
+        if (!card) return;
+        const alvoTopo = () => Math.max(0, card.getBoundingClientRect().top + window.pageYOffset - 8);
+        // espera o layout terminar de se ajustar (lista re-renderizada, prévias de imagem recolhidas)
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            window.scrollTo({ top: alvoTopo(), behavior: 'smooth' });
+        }));
+        // correção final caso a rolagem suave tenha sido interrompida por mudança de layout
+        setTimeout(() => {
+            if (Math.abs(card.getBoundingClientRect().top - 8) > 6) {
+                window.scrollTo({ top: alvoTopo(), behavior: 'auto' });
+            }
+        }, 700);
+    }
+    
+function salvarRegistro() {
+      const elAtividade = document.getElementById('header-atividade');
+      const elFase = document.getElementById('header-fase-forca-tarefa');
+      const elEstabelecimento = document.getElementById('header-estabelecimento');
+      const elLocal = document.getElementById('header-local');
+      const elData = document.getElementById('header-data');
+      const elMontadora = document.getElementById('reg-montadora');
+      const elModeloSelect = document.getElementById('reg-modelo-select');
+      const elModeloInput = document.getElementById('reg-modelo');
+      const elCor = document.getElementById('reg-cor');
+      const elPlaca = document.getElementById('reg-placa');
+      const hasPlate = document.getElementById('reg-has-plate').checked;
+
+      const atividade = elAtividade.value.trim();
+      const fase = elFase.value.trim();
+      const estabelecimento = elEstabelecimento.value.trim();
+      const local = elLocal.value.trim();
+      const dataHeader = elData.value;
+      const montadoraId = elMontadora.value;
+      const modeloNome = elModeloInput.value.trim();
+      const corId = elCor.value;
+      const placa = elPlaca.value.trim();
+
+      const exibeFase = document.getElementById('grupo-fase-forca-tarefa').style.display !== 'none';
+      const exibeEndereco = document.getElementById('grupo-endereco').style.display !== 'none';
+
+      if (!atividade) { mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> PREENCHA A <span class="text-red-600 font-bold">"NATUREZA DA ATIVIDADE"</span>!', elAtividade); return; }
+      if (document.getElementById('grupo-apoio').style.display !== 'none' && !document.getElementById('header-apoio').value.trim()) { mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> PREENCHA O CAMPO <span class="text-red-600 font-bold">"APOIO À"</span>!', document.getElementById('header-apoio')); return; }
+      if (exibeFase && !fase) { mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> PREENCHA A <span class="text-red-600 font-bold">"FASE DA FORÇA TAREFA"</span>!', elFase); return; }
+      if (!estabelecimento) { mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> PREENCHA A <span class="text-red-600 font-bold">"EMPRESA / ESTABELECIMENTO"</span>!', elEstabelecimento); return; }
+      if (exibeEndereco && !local) { mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> PREENCHA O <span class="text-red-600 font-bold">"ENDEREÇO"</span>!', elLocal); return; }
+      if (!dataHeader) { mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> SELECIONE A <span class="text-red-600 font-bold">"DATA"</span>!', elData); return; }
+      if (!montadoraId) { mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> SELECIONE A <span class="text-red-600 font-bold">"MONTADORA"</span>!', elMontadora); return; }
+      if (!modeloNome) { mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> SELECIONE O <span class="text-red-600 font-bold">"MODELO DO VEÍCULO"</span>!', elModeloSelect); return; }
+      if (!corId) { mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> SELECIONE A <span class="text-red-600 font-bold">"COR"</span>!', elCor); return; }
+      if (hasPlate && !placa) { mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> INFORME A <span class="text-red-600 font-bold">"IDENTIFICAÇÃO"</span> DO VEÍCULO!', elPlaca); return; }
+      if (currentImages.length === 0) { mostrarAlertaAviso('IMAGENS FALTANDO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> ADICIONE AO MENOS <span class="text-red-600 font-bold">1 IMAGEM</span> DA SUCATA!', document.getElementById('preview-container').parentElement); return; }
+
+      const objMontadora = montadoras.find(m => m.id === montadoraId);
+      const objCor = cores.find(c => c.id === corId);
+
+      if (editingItemId) {
+        const index = registros.findIndex(r => r.id === editingItemId);
+        if (index !== -1) {
+          registros[index].modelo = modeloNome.toUpperCase();
+          registros[index].montadora = objMontadora ? objMontadora.nome.toUpperCase() : 'N/A';
+          registros[index].cor = objCor ? objCor.nome.toUpperCase() : 'N/A';
+          registros[index].placa = placa.toUpperCase();
+          registros[index].imagens = [...currentImages];
+        }
+      } else {
+        const novoRegistro = {
+          id: Date.now(),
+          modelo: modeloNome.toUpperCase(),
+          montadora: objMontadora ? objMontadora.nome.toUpperCase() : 'N/A',
+          cor: objCor ? objCor.nome.toUpperCase() : 'N/A',
+          placa: placa.toUpperCase(),
+          imagens: [...currentImages]
+        };
+        registros.push(novoRegistro);
+      }
+
+      try {
+        Armazem.ls.setItem(STORAGE_KEYS.REGISTROS, JSON.stringify(registros));
+      } catch (e) {
+          mostrarAlertaAviso('MEMÓRIA CHEIA', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> O SEU NAVEGADOR ESTÁ SEM ESPAÇO NA MEMÓRIA.');
+          return;
+      }
+
+      renderRegistros();
+      resetFormState();
+      loadFormDraft();
+      
+      rolarParaCardNovaSucata();
+    }
+
+    function editarRegistro(id) {
+      const item = registros.find(r => r.id === id);
+      if (!item) return;
+
+      editingItemId = id;
+      document.getElementById('form-section-title').textContent = `EDITAR SUCATA (#${registros.findIndex(r => r.id === id) + 1})`;
+      document.getElementById('btn-cancel-edit').style.display = 'block';
+      document.getElementById('btn-salvar').textContent = 'ATUALIZAR';
+
+      const objMontadora = montadoras.find(m => m.nome.toUpperCase() === item.montadora);
+      if (objMontadora) {
+        document.getElementById('reg-montadora').value = objMontadora.id;
+        const objModelo = modelos.find(m => m.nome.toUpperCase() === item.modelo && m.montadoraId === objMontadora.id);
+        popularModelosDropdown(objMontadora.id, objModelo ? objModelo.id : '');
+      } else {
+        document.getElementById('reg-montadora').value = '';
+        popularModelosDropdown('');
+      }
+
+      document.getElementById('reg-modelo').value = item.modelo || '';
+
+      const objCor = cores.find(c => c.nome.toUpperCase() === item.cor);
+      if (objCor) {
+        document.getElementById('reg-cor').value = objCor.id;
+      } else {
+        document.getElementById('reg-cor').value = '';
+      }
+
+      const hasPlate = item.placa !== 'SEM IDENTIFICAÇÃO';
+      document.getElementById('reg-has-plate').checked = hasPlate;
+      togglePlateInput(false);
+      document.getElementById('reg-placa').value = item.placa;
+
+      currentImages = item.imagens ? [...item.imagens] : (item.imagem ? [item.imagem] : []);
+      renderImagePreviews();
+
+      document.getElementById('form-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function renderRegistros() {
+      const container = document.getElementById('items-list');
+      container.innerHTML = '';
+
+      registros.forEach((item, index) => {
+        const itemImages = item.imagens || (item.imagem ? [item.imagem] : []);
+        
+        let imagesHTML = '<div class="images-grid">';
+        itemImages.forEach((img, i) => {
+          imagesHTML += `<img src="${img}" class="item-image" alt="Foto ${i + 1}" onclick="openLightbox('${img}')" title="Clique para ampliar">`;
+        });
+        imagesHTML += '</div>';
+
+        const itemCard = document.createElement('div');
+        itemCard.className = 'item-card';
+        itemCard.innerHTML = `
+          <div class="item-header">
+            <span>#${String(index + 1).padStart(2, '0')}</span>
+            <div class="item-actions-group">
+              <button class="btn-icon" onclick="editarRegistro(${item.id})" title="Editar">✏️</button>
+              <button class="btn-icon" onclick="excluirRegistro(${item.id})" title="Excluir">🗑️</button>
+            </div>
+          </div>
+          <div class="item-body">
+            <div class="item-details">
+              <div class="detail-group">
+                <label>MONTADORA</label>
+                <div>${item.montadora}</div>
+              </div>
+              <div class="detail-group">
+                <label>MODELO</label>
+                <div>${item.modelo}</div>
+              </div>
+              <div class="detail-group">
+                <label>COR</label>
+                <div>${item.cor}</div>
+              </div>
+              <div class="detail-group">
+                <label>IDENTIFICAÇÃO</label>
+                <div>
+                  <span class="${item.placa === 'SEM IDENTIFICAÇÃO' ? '' : 'badge-plate'}">${item.placa}</span>
+                </div>
+              </div>
+            </div>
+            <div>
+              ${imagesHTML}
+            </div>
+          </div>
+        `;
+        container.appendChild(itemCard);
+      });
+    }
+
+    function excluirRegistro(id) {
+      if (editingItemId === id) {
+        resetFormState();
+        loadFormDraft();
+      }
+      Swal.fire({
+        title: 'EXCLUIR SUCATA?',
+        html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> ESTA AÇÃO <span class="text-red-500 font-bold">NÃO PODERÁ SER DESFEITA </span>.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#000000',
+        confirmButtonText: 'EXCLUIR',
+        cancelButtonText: 'CANCELAR'
+      }).then((result) => {
+        if (result.isConfirmed) {
+          registros = registros.filter(r => r.id !== id);
+          try {
+            Armazem.ls.setItem(STORAGE_KEYS.REGISTROS, JSON.stringify(registros));
+          } catch (_) {}
+          renderRegistros();
+          Swal.fire({
+            icon: 'success',
+            title: 'EXCLUÍDO!',
+            html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> O REGISTRO FOI EXCLUÍDO.',
+            timer: 1500,
+            showConfirmButton: false
+          });
+        }
+      });
+    }
+
+    function rolarParaTopoAposLimpar() {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        // correção de segurança caso a rolagem suave seja interrompida pela mudança de layout
+        setTimeout(() => {
+            if (window.pageYOffset > 2) window.scrollTo({ top: 0, behavior: 'auto' });
+        }, 1200);
+    }
+
+        function limparTabela() {
+      Swal.fire({
+        title: 'TEM CERTEZA?',
+        html: "<span class='text-amber-500 font-bold'>ATENÇÃO:  </span> ISTO IRÁ <span class='text-red-500 font-bold'> 'APAGAR' TODOS OS CAMPOS PREENCHIDOS NA PÁGINA </span>!",
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#000000',
+        confirmButtonText: 'OK',
+        cancelButtonText: 'CANCELAR',
+        returnFocus: false,
+        didClose: () => {
+            if (window.foiConfirmadoLimpar) {
+                window.foiConfirmadoLimpar = false;
+                setTimeout(() => { rolarParaTopoAposLimpar(); }, 100);
+            }
+        }
+      }).then((result) => {
+        if (result.isConfirmed) {
+            window.foiConfirmadoLimpar = true;
+          registros = [];
+          Armazem.ls.removeItem(STORAGE_KEYS.REGISTROS);
+          renderRegistros();
+
+          document.getElementById('header-atividade').value = '';
+          document.getElementById('header-fase-forca-tarefa').value = '';
+          document.getElementById('header-estabelecimento').value = '';
+          document.getElementById('header-local').value = '';
+          document.getElementById('header-apoio').value = '';
+          document.getElementById('header-data').value = '';
+          
+          atualizarCamposNatureza();
+          saveHeaderData();
+          resetFormState();
+          loadFormDraft();
+          
+        }
+      });
+    }
+
+    function validarGeracaoPDF() {
+      const elAtividade = document.getElementById('header-atividade');
+      const elFase = document.getElementById('header-fase-forca-tarefa');
+      const elEstabelecimento = document.getElementById('header-estabelecimento');
+      const elLocal = document.getElementById('header-local');
+      const elData = document.getElementById('header-data');
+
+      const exibeFase = document.getElementById('grupo-fase-forca-tarefa').style.display !== 'none';
+      const exibeEndereco = document.getElementById('grupo-endereco').style.display !== 'none';
+
+      if (!elAtividade.value.trim()) { mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> PREENCHA A <span class="text-red-600 font-bold">"NATUREZA DA ATIVIDADE"</span>!', elAtividade); return false; }
+      if (document.getElementById('grupo-apoio').style.display !== 'none' && !document.getElementById('header-apoio').value.trim()) { mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> PREENCHA O CAMPO <span class="text-red-600 font-bold">"APOIO À"</span>!', document.getElementById('header-apoio')); return false; }
+      if (exibeFase && !elFase.value.trim()) { mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> PREENCHA A <span class="text-red-600 font-bold">"FASE DA FORÇA TAREFA"</span>!', elFase); return false; }
+      if (!elEstabelecimento.value.trim()) { mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> PREENCHA O <span class="text-red-600 font-bold">"EMPRESA / ESTABELECIMENTO"</span>!', elEstabelecimento); return false; }
+      if (exibeEndereco && !elLocal.value.trim()) { mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> PREENCHA O <span class="text-red-600 font-bold">"ENDEREÇO"</span>!', elLocal); return false; }
+      if (!elData.value) { mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> SELECIONE A <span class="text-red-600 font-bold">"DATA"</span>!', elData); return false; }
+
+      if (registros.length === 0) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'LISTA VAZIA',
+          html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> NÃO HÁ <span class="text-red-500 font-bold">NENHUMA SUCATA REGISTRADA</span> PARA GERAR O PDF.',
+          confirmButtonColor: '#000000'
+        });
+        return false;
+      }
+
+      return true;
+    }
+
+    function obterBrasaoBase64() {
+        return new Promise((resolve) => {
+            try {
+                const imgNode = document.querySelector('.header-logo');
+                if (imgNode && imgNode.complete && imgNode.naturalWidth > 0) {
+                    const maxDim = 180;
+                    let w = imgNode.naturalWidth;
+                    let h = imgNode.naturalHeight;
+                    if (w > maxDim || h > maxDim) {
+                        if (w > h) {
+                            h = Math.round((h * maxDim) / w);
+                            w = maxDim;
+                        } else {
+                            w = Math.round((w * maxDim) / h);
+                            h = maxDim;
+                        }
+                    }
+                    const canvas = document.createElement('canvas');
+                    canvas.width = w;
+                    canvas.height = h;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(imgNode, 0, 0, w, h);
+                    resolve({ data: canvas.toDataURL('image/png'), format: 'PNG' });
+                } else {
+                    resolve(null);
+                }
+            } catch (e) {
+                resolve(null);
+            }
+        });
+    }
+
+    function otimizarImagemParaPDF(imgSrc, maxDim = 380, quality = 0.65) {
+      return new Promise((resolve) => {
+        if (!imgSrc) return resolve(null);
+        if (imgSrc.startsWith('data:image/jpeg') && imgSrc.length < 60000) {
+          return resolve(imgSrc);
+        }
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          let w = img.width;
+          let h = img.height;
+          if (w > maxDim || h > maxDim) {
+            if (w > h) {
+              h = Math.round((h * maxDim) / w);
+              w = maxDim;
+            } else {
+              w = Math.round((w * maxDim) / h);
+              h = maxDim;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, w, h);
+          ctx.drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        };
+        img.onerror = () => resolve(imgSrc);
+        img.src = imgSrc;
+      });
+    }
+
+    function limparAposGeracao() {
+      registros = [];
+      Armazem.ls.removeItem(STORAGE_KEYS.REGISTROS);
+      renderRegistros();
+      document.getElementById('header-atividade').value = '';
+      document.getElementById('header-fase-forca-tarefa').value = '';
+      document.getElementById('header-estabelecimento').value = '';
+      document.getElementById('header-local').value = '';
+      document.getElementById('header-apoio').value = '';
+      document.getElementById('header-data').value = '';
+      atualizarCamposNatureza();
+      saveHeaderData();
+      resetFormState();
+      loadFormDraft();
+      setTimeout(() => {
+        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+      }, 100);
+    }
+
+    async function gerarPDFPersonalizado() {
+        if (!validarGeracaoPDF()) return;
+
+        const atividade = document.getElementById('header-atividade').value.trim();
+        const fase = document.getElementById('header-fase-forca-tarefa').value.trim();
+        const estabelecimento = document.getElementById('header-estabelecimento').value.trim();
+        const local = document.getElementById('header-local').value.trim();
+        const apoio = document.getElementById('header-apoio').value.trim();
+        const dataRaw = document.getElementById('header-data').value;
+        const dataBR = dataRaw.split('-').reverse().join('/');
+        const cleanAtividade = atividade.replace(/[\/\\\\:*?"<>|]/g, '-');
+        const cleanEstabelecimento = estabelecimento.replace(/[\/\\\\:*?"<>|]/g, '-');
+        
+        const isForcaTarefa = normalizarTexto(atividade).includes('FORCA TAREFA');
+        const faseNoNome = (isForcaTarefa && fase) ? ` - FASE ${fase.toUpperCase()}` : '';
+        const dataNomeArquivo = dataRaw.split('-').reverse().join('-');
+        const nomeArquivo = `CONTROLE DE SUCATAS - ${cleanAtividade.toUpperCase()}${faseNoNome} - ${cleanEstabelecimento.toUpperCase()} - ${dataNomeArquivo}.pdf`;
+
+        const exibeFase = document.getElementById('grupo-fase-forca-tarefa').style.display !== 'none';
+        const exibeEndereco = document.getElementById('grupo-endereco').style.display !== 'none';
+
+        Swal.fire({
+            title: 'GERANDO PDF...',
+            html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> AGUARDE A CRIAÇÃO E SALVAMENTO DO ARQUIVO.',
+            allowOutsideClick: false,
+            didOpen: () => { Swal.showLoading(); }
+        });
+
+        try {
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF({
+                orientation: 'p',
+                unit: 'mm',
+                format: 'a4',
+                compress: true
+            });
+
+            const pageWidth = pdf.internal.pageSize.getWidth();
+            const pageHeight = pdf.internal.pageSize.getHeight();
+            const marginX = 14;
+            const cardWidth = pageWidth - (marginX * 2);
+            let curY = 10;
+
+            const logoInfo = await obterBrasaoBase64();
+            if (logoInfo && logoInfo.data) {
+                pdf.addImage(logoInfo.data, logoInfo.format, pageWidth / 2 - 12, curY, 24, 24, undefined, 'FAST');
+                curY += 32; 
+            } else {
+                curY += 10;
+            }
+
+            pdf.setFont('helvetica', 'bold');
+            pdf.setFontSize(12);
+            pdf.setTextColor(0, 0, 0);
+            pdf.text('GOVERNO DO ESTADO DO RIO DE JANEIRO', pageWidth / 2, curY, { align: 'center' });
+            curY += 5.5;
+            pdf.setFontSize(10);
+            pdf.text('DEPARTAMENTO DE TRÂNSITO DO ESTADO DO RIO DE JANEIRO - DETRAN.RJ', pageWidth / 2, curY, { align: 'center' });
+            curY += 5.5;
+            pdf.setFont('helvetica', 'normal');
+            pdf.setFontSize(9);
+            pdf.text('DIRETORIA GERAL DAS ATIVIDADES DE DESMONTAGEM', pageWidth / 2, curY, { align: 'center' });
+            curY += 5.5;
+            pdf.setFont('helvetica', 'normal');
+            pdf.setFontSize(9);
+            pdf.text('DIVISÃO DE FISCALIZAÇÃO', pageWidth / 2, curY, { align: 'center' });
+            curY += 10;
+
+            const drawInfoBox = (x, yPos, w, label, value) => {
+                pdf.setFillColor(249, 250, 251); 
+                pdf.setDrawColor(220, 220, 220);
+                pdf.roundedRect(x, yPos, w, 11, 1.5, 1.5, 'FD');
+                
+                pdf.setFontSize(7);
+                pdf.setTextColor(100, 100, 100); 
+                pdf.setFont('helvetica', 'bold');
+                pdf.text(label, x + 3, yPos + 4);
+                
+                pdf.setFontSize(9);
+                pdf.setTextColor(0, 0, 0);
+                pdf.setFont('helvetica', 'normal');
+                pdf.text(value, x + 3, yPos + 9);
+            };
+
+            drawInfoBox(marginX, curY, 130, 'NATUREZA DA ATIVIDADE:', atividade.toUpperCase());
+            drawInfoBox(148, curY, 48, 'DATA:', dataBR);
+            curY += 13;
+            if (document.getElementById('grupo-apoio').style.display !== 'none') {
+                drawInfoBox(marginX, curY, cardWidth, 'APOIO À:', apoio.toUpperCase());
+                curY += 13;
+            }
+            if (exibeFase) {
+                drawInfoBox(marginX, curY, cardWidth, 'FASE DA FORÇA TAREFA:', fase.toUpperCase());
+                curY += 13;
+            }
+            drawInfoBox(marginX, curY, cardWidth, 'EMPRESA / ESTABELECIMENTO:', estabelecimento.toUpperCase());
+            curY += 13;
+            if (exibeEndereco) {
+                drawInfoBox(marginX, curY, cardWidth, 'ENDEREÇO:', local.toUpperCase());
+                curY += 13;
+            }
+            curY += 5;
+
+            pdf.setFont('helvetica', 'bold');
+            pdf.setFontSize(11);
+            pdf.setTextColor(0, 0, 0);
+            pdf.text('CONTROLE DE SUCATAS REGISTRADAS', pageWidth / 2, curY, { align: 'center' });
+            curY += 7;
+
+            const imgWidth = 32;
+            const imgHeight = 32;
+            const gapX = 2.5;
+            const gapY = 3;
+            const imgsPerRow = 5;
+
+            for (let i = 0; i < registros.length; i++) {
+                const reg = registros[i];
+                const imgs = reg.imagens || (reg.imagem ? [reg.imagem] : []);
+
+                let cardBodyHeight = 7.5 + 10.5 + 10.5;
+
+                if (imgs.length > 0) {
+                    const numRows = Math.ceil(imgs.length / imgsPerRow);
+                    cardBodyHeight += 4 + (numRows * imgHeight) + ((numRows - 1) * gapY) + 4;
+                } else {
+                    cardBodyHeight += 9;
+                }
+
+                if (curY + cardBodyHeight > pageHeight - 12) {
+                    pdf.addPage();
+                    curY = 12;
+                }
+
+                const cardStartY = curY;
+
+                pdf.setFillColor(31, 41, 55);
+                pdf.rect(marginX, curY, cardWidth, 7.5, 'F');
+                pdf.setFont('helvetica', 'bold');
+                pdf.setFontSize(8.5);
+                pdf.setTextColor(255, 255, 255);
+                pdf.text(`SUCATA #${String(i + 1).padStart(2, '0')}`, marginX + 3, curY + 5.2);
+                curY += 7.5;
+
+                pdf.setFillColor(250, 250, 250);
+                pdf.setDrawColor(225, 225, 225);
+                pdf.rect(marginX, curY, cardWidth, 10.5, 'FD');
+
+                const colWidth = cardWidth / 3;
+                pdf.setTextColor(110, 110, 110);
+                pdf.setFont('helvetica', 'bold');
+                pdf.setFontSize(6.5);
+                pdf.text('MONTADORA:', marginX + 3, curY + 4);
+                pdf.text('MODELO:', marginX + colWidth + 3, curY + 4);
+                pdf.text('COR:', marginX + (colWidth * 2) + 3, curY + 4);
+
+                pdf.setTextColor(17, 24, 39);
+                pdf.setFont('helvetica', 'normal');
+                pdf.setFontSize(8);
+                pdf.text(reg.montadora || 'N/A', marginX + 3, curY + 8.2);
+                pdf.text(reg.modelo || 'N/A', marginX + colWidth + 3, curY + 8.2);
+                pdf.text(reg.cor || 'N/A', marginX + (colWidth * 2) + 3, curY + 8.2);
+                curY += 10.5;
+
+                pdf.setFillColor(255, 255, 255);
+                pdf.setDrawColor(225, 225, 225);
+                pdf.rect(marginX, curY, cardWidth, 10.5, 'FD');
+
+                pdf.setTextColor(110, 110, 110);
+                pdf.setFont('helvetica', 'bold');
+                pdf.setFontSize(6.5);
+                pdf.text('CHASSI / PLACA / VIS:', marginX + 3, curY + 4);
+
+                pdf.setTextColor(17, 24, 39);
+                pdf.setFont('helvetica', 'normal');
+                pdf.setFontSize(8.5);
+                pdf.text(reg.placa || 'SEM IDENTIFICAÇÃO', marginX + 3, curY + 8.2);
+                curY += 10.5;
+
+                if (imgs.length > 0) {
+                    curY += 3.5;
+                    let currentX = marginX + 3;
+                    let imgRowStartY = curY;
+
+                    for (let j = 0; j < imgs.length; j++) {
+                        if (currentX + imgWidth > marginX + cardWidth - 2) {
+                            currentX = marginX + 3;
+                            imgRowStartY += imgHeight + gapY;
+                        }
+
+                        try {
+                            const imgOtimizada = await otimizarImagemParaPDF(imgs[j]);
+                            pdf.setDrawColor(215, 215, 215);
+                            pdf.rect(currentX, imgRowStartY, imgWidth, imgHeight);
+                            if (imgOtimizada) {
+                                pdf.addImage(imgOtimizada, 'JPEG', currentX + 0.5, imgRowStartY + 0.5, imgWidth - 1, imgHeight - 1, undefined, 'FAST');
+                            }
+                        } catch(e) {
+                            console.warn("Erro ao renderizar imagem.", e);
+                        }
+
+                        currentX += imgWidth + gapX;
+                    }
+                    curY = imgRowStartY + imgHeight + 4;
+                } else {
+                    pdf.setFont('helvetica', 'italic');
+                    pdf.setFontSize(7.5);
+                    pdf.setTextColor(150, 150, 150);
+                    pdf.text('Nenhuma imagem anexada.', marginX + 3, curY + 5.5);
+                    curY += 8.5;
+                }
+
+                const finalCardHeight = curY - cardStartY;
+                pdf.setDrawColor(180, 185, 195);
+                pdf.setLineWidth(0.35);
+                pdf.rect(marginX, cardStartY, cardWidth, finalCardHeight, 'S');
+
+                curY += 2;
+            }
+
+            const pdfBlob = pdf.output('blob');
+            const pdfDataUri = pdf.output('datauristring');
+
+            await salvarPDFHistorico({
+                id: Date.now().toString(),
+                nome: nomeArquivo,
+                atividade: cleanAtividade.toUpperCase(),
+                fase: isForcaTarefa ? fase.toUpperCase() : '',
+                estabelecimento: cleanEstabelecimento.toUpperCase(),
+                local: local.toUpperCase(),
+                apoio: document.getElementById('grupo-apoio').style.display !== 'none' ? apoio.toUpperCase() : '',
+                dataFiscalizacao: dataBR,
+                dataGeracao: new Date().toLocaleString('pt-BR'),
+                timestamp: Date.now(),
+                blob: pdfBlob,
+                dataUri: pdfDataUri
+            });
+
+            const foiCompartilhado = await compartilharPDFGeradoWhatsApp(pdfBlob, nomeArquivo);
+
+            Swal.close();
+
+            if (foiCompartilhado) {
+              Swal.fire({
+                  icon: 'success',
+                  title: 'PDF GERADO E COMPARTILHADO!',
+                  html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> O ARQUIVO FOI ADICIONADO AO HISTÓRICO DA PÁGINA.',
+                  confirmButtonColor: '#000000'
+              }).then(() => {
+                  // limparAposGeracao();
+              });
+            } else {
+              Swal.fire({
+                  icon: 'success',
+                  title: 'PDF GERADO COM SUCESSO!',
+                  html: `<span class="text-amber-500 font-bold">ATENÇÃO:</span> O ARQUIVO FOI ADICIONADO AO HISTÓRICO DE PDF´S GERADOS.<br><br>
+               <b>PARA FAZER BAIXAR,</b> UTILIZE O BOTÃO "⬇️" NO HISTÓRICO DE PDF´S ABAIXO.`,
+                  confirmButtonColor: '#000000'
+              }).then(() => {
+                  // limparAposGeracao();
+              });
+            }
+
+        } catch (error) {
+            console.error('Erro ao gerar PDF:', error);
+            Swal.fire({
+                icon: 'error',
+                title: 'ERRO AO GERAR PDF',
+                html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> OCORREU UM <span class="text-red-500 font-bold">PROBLEMA AO GERAR O PDF</span>.',
+                confirmButtonColor: '#000000'
+            });
+        }
+    }
+
+    async function compartilharPDFGeradoWhatsApp(blob, nomeArquivo) {
+      const arquivo = new File([blob], nomeArquivo, { type: 'application/pdf' });
+
+      if (navigator.share && navigator.canShare) {
+        try {
+          if (navigator.canShare({ files: [arquivo] })) {
+            await navigator.share({
+              files: [arquivo],
+              title: nomeArquivo,
+              text: 'CONTROLE DE SUCATAS'
+            });
+            return true;
+          }
+        } catch (error) {
+          if (error && error.name === 'AbortError') return false;
+        }
+      }
+      return false;
+    }
+
+    function compartilharResumo() {
+      if (!validarGeracaoPDF()) return;
+
+      const atividade = document.getElementById('header-atividade').value.toUpperCase();
+      const fase = document.getElementById('header-fase-forca-tarefa').value.toUpperCase();
+      const estabelecimento = document.getElementById('header-estabelecimento').value.toUpperCase();
+      const local = document.getElementById('header-local').value.toUpperCase();
+      const dataRaw = document.getElementById('header-data').value;
+      const dataBR = dataRaw.split('-').reverse().join('/');
+
+      let mensagem = `*CONTROLE DE SUCATAS*\n\n`;
+      mensagem += `🧐 *NATUREZA DA ATIVIDADE:* ${atividade}\n`;
+      if (document.getElementById('grupo-apoio').style.display !== 'none') {
+          mensagem += `🤝 *APOIO À:* ${document.getElementById('header-apoio').value.toUpperCase()}\n`;
+      }
+      if (document.getElementById('grupo-fase-forca-tarefa').style.display !== 'none') {
+          mensagem += `🪖 *FASE DA FORÇA TAREFA:* ${fase}\n`;
+      }
+      mensagem += `🏢 *EMPRESA / ESTABELECIMENTO:* ${estabelecimento}\n`;
+      if (document.getElementById('grupo-endereco').style.display !== 'none') {
+          mensagem += `📍 *ENDEREÇO:* ${local}\n`;
+      }
+      mensagem += `📅 *DATA:* ${dataBR}\n\n`;
+      mensagem += `🚗 *TOTAL DE SUCATAS REGISTRADAS:* ${registros.length}\n\n`;
+      
+      registros.forEach((r, i) => {
+          mensagem += `*#${String(i+1).padStart(2, '0')}. ${r.modelo}*\nMontadora: ${r.montadora} | Cor: ${r.cor} | ID: ${r.placa}\n\n`;
+      });
+
+      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(mensagem)}`, '_blank');
+    }
+
+    async function salvarPDFHistorico(pdfObj) {
+      try {
+        await dbSalvarPDF(pdfObj);
+        await renderizarGridPDFs();
+      } catch(e) {
+        console.error('Erro ao salvar no histórico:', e);
+      }
+    }
+
+    async function renderizarGridPDFs() {
+      const container = document.getElementById('grid-pdfs-container');
+      if (!container) return;
+
+      const termoBusca = (document.getElementById('busca-pdf')?.value || '').toLowerCase().trim();
+      let historico = await dbObterTodosPDFs();
+
+      historico.sort((a, b) => b.timestamp - a.timestamp);
+
+      if (termoBusca) {
+        historico = historico.filter(item =>
+          (item.nome && item.nome.toLowerCase().includes(termoBusca)) ||
+          (item.atividade && item.atividade.toLowerCase().includes(termoBusca)) ||
+          (item.estabelecimento && item.estabelecimento.toLowerCase().includes(termoBusca)) ||
+          (item.fase && item.fase.toLowerCase().includes(termoBusca)) ||
+          (item.local && item.local.toLowerCase().includes(termoBusca)) ||
+          (item.dataFiscalizacao && item.dataFiscalizacao.toLowerCase().includes(termoBusca)) ||
+          (item.dataGeracao && item.dataGeracao.toLowerCase().includes(termoBusca))
+        );
+      }
+
+      if (historico.length === 0) {
+        container.innerHTML = `<div class="pdf-empty-state">NENHUM PDF ENCONTRADO NO HISTÓRICO</div>`;
+        return;
+      }
+
+      container.innerHTML = historico.map(item => `
+        <div class="pdf-card">
+          <div class="pdf-card-info" onclick="abrirPDF('${item.id}')" title="CLIQUE AQUI PARA ABRIR O PDF">
+            <span class="pdf-card-icon">📄</span>
+            <div class="pdf-card-text">
+              <div class="pdf-card-title" title="${item.nome}">${item.atividade || 'SUCATAS'}${item.fase ? ' - FASE ' + item.fase : ''}${item.estabelecimento ? ' - ' + item.estabelecimento : ''} - ${item.dataFiscalizacao || (item.dataGeracao || '').split(',')[0]}</div>
+              <div class="pdf-card-meta">GERADO EM: ${item.dataGeracao}</div>
+            </div>
+          </div>
+          <div class="pdf-card-actions">
+            <button class="btn-icon-pdf" onclick="abrirPDF('${item.id}')" title="ABRIR / VISUALIZAR PDF">👁️</button>
+            <button class="btn-icon-pdf" onclick="baixarPDFHistorico('${item.id}')" title="BAIXAR PDF">⬇️</button>
+            <button class="btn-icon-pdf" onclick="excluirPDF('${item.id}')" title="EXCLUIR PDF">🗑️</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function abrirPDF(id) {
+        // Abre a nova aba imediatamente (dentro do clique) para o navegador não bloquear
+        const win = window.open('', '_blank');
+        if (win) {
+            try { win.document.write('<title>PDF</title><p style="font-family:sans-serif;text-align:center;margin-top:40px;">CARREGANDO PDF...</p>'); } catch (_) {}
+        }
+
+        const pdfObj = await dbObterPDFPorId(id);
+        let blob = pdfObj ? pdfObj.blob : null;
+
+        try {
+            if (pdfObj && !blob && pdfObj.dataUri) {
+                const byteString = atob(pdfObj.dataUri.split(',')[1]);
+                const mimeString = pdfObj.dataUri.split(',')[0].split(':')[1].split(';')[0];
+                const ab = new ArrayBuffer(byteString.length);
+                const ia = new Uint8Array(ab);
+                for (let i = 0; i < byteString.length; i++) {
+                    ia[i] = byteString.charCodeAt(i);
+                }
+                blob = new Blob([ab], { type: mimeString || 'application/pdf' });
+            }
+        } catch (e) {
+            console.error('Erro ao preparar PDF:', e);
+        }
+
+        if (blob) {
+            const blobUrl = URL.createObjectURL(blob.type === 'application/pdf' ? blob : new Blob([blob], { type: 'application/pdf' }));
+            if (win) {
+                win.location.href = blobUrl;
+            } else {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'BLOQUEADOR DE POP-UP DETECTADO',
+                    html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> PERMITA POP-UPS PARA ABRIR O PDF SALVO.',
+                    confirmButtonColor: '#000000'
+                });
+            }
+            return;
+        }
+
+        if (win) win.close();
+        Swal.fire({
+            icon: 'error',
+            title: 'NÃO ENCONTRADO',
+            html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> O PDF SELECIONADO <span class="text-red-500 font-bold">NÃO FOI ENCONTRADO</span> NO HISTÓRICO.',
+            confirmButtonColor: '#000000'
+        });
+    }
+
+        function avisarDownloadEAtualizar() {
+        Swal.fire({
+            icon: 'success',
+            title: 'DOWNLOAD INICIADO!',
+            html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> O PDF ESTÁ SENDO BAIXADO. A PÁGINA SERÁ ATUALIZADA.',
+            timer: 1500,
+            timerProgressBar: true,
+            showConfirmButton: false,
+            allowOutsideClick: false,
+            allowEscapeKey: false
+        }).then(() => { window.location.reload(); });
+    }
+
+    async function baixarPDFHistorico(id) {
+      const pdfObj = await dbObterPDFPorId(id);
+      if (!pdfObj) return;
+
+      let blob = pdfObj.blob;
+      if (!blob && pdfObj.dataUri) {
+        const byteString = atob(pdfObj.dataUri.split(',')[1]);
+        const mimeString = pdfObj.dataUri.split(',')[0].split(':')[1].split(';')[0];
+        const ab = new ArrayBuffer(byteString.length);
+        const ia = new Uint8Array(ab);
+        for (let i = 0; i < byteString.length; i++) {
+          ia[i] = byteString.charCodeAt(i);
+        }
+        blob = new Blob([ab], { type: mimeString });
+      }
+
+      if (blob) {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = pdfObj.nome || 'relatorio-sucatas.pdf';
+        document.body.appendChild(a);
+        a.click();
+        avisarDownloadEAtualizar();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      }
+    }
+
+    async function excluirPDF(id) {
+      Swal.fire({
+        title: 'EXCLUIR PDF?',
+        html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> ESTA AÇÃO <span class="text-red-500 font-bold">NÃO PODERÁ SER DESFEITA </span>.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#000000',
+        confirmButtonText: 'EXCLUIR',
+        cancelButtonText: 'CANCELAR'
+      }).then(async (result) => {
+        if (result.isConfirmed) {
+          await dbExcluirPDF(id);
+          await renderizarGridPDFs();
+          Swal.fire({
+            icon: 'success',
+            title: 'EXCLUÍDO!',
+            html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> O PDF FOI EXCLUÍDO DO HISTÓRICO.',
+            timer: 1500,
+            showConfirmButton: false
+          });
+        }
+      });
+    }
+
+    function openManager(type) {
+      activeManagerType = type;
+      editingOptionId = null;
+      document.getElementById('manager-modal').classList.add('active');
+      document.getElementById('modal-input-name').value = '';
+      
+      const subSelect = document.getElementById('modal-input-sub');
+      const title = document.getElementById('modal-title');
+
+      if (type === 'modelos') {
+        title.textContent = 'GERENCIAR MODELOS';
+        subSelect.style.display = 'block';
+        subSelect.innerHTML = '<option value="">VINCULAR A MONTADORA...</option>';
+        montadoras.forEach(m => {
+          subSelect.innerHTML += `<option value="${m.id}">${m.nome.toUpperCase()}</option>`;
+        });
+      } else if (type === 'montadoras') {
+        subSelect.style.display = 'none';
+        title.textContent = 'GERENCIAR MONTADORAS';
+      } else {
+        subSelect.style.display = 'none';
+        title.textContent = 'GERENCIAR CORES';
+      }
+
+      renderModalItems();
+    }
+
+    function closeManager() {
+      document.getElementById('manager-modal').classList.remove('active');
+      renderSelects();
+    }
+
+    function renderModalItems() {
+      const container = document.getElementById('modal-items-container');
+      container.innerHTML = '';
+
+      let list = [];
+      if (activeManagerType === 'modelos') list = modelos;
+      else if (activeManagerType === 'montadoras') list = montadoras;
+      else if (activeManagerType === 'cores') list = cores;
+
+      list.forEach(item => {
+        let subText = '';
+        if (activeManagerType === 'modelos') {
+          const parent = montadoras.find(m => m.id === item.montadoraId);
+          subText = parent ? ` (${parent.nome.toUpperCase()})` : '';
+        }
+
+        const div = document.createElement('div');
+        div.className = 'modal-item';
+        div.innerHTML = `
+          <span>${item.nome.toUpperCase()}${subText}</span>
+          <div class="modal-item-actions">
+            <button class="btn-sm btn-outline" onclick="editOptionItem('${item.id}')">✏️</button>
+            <button class="btn-sm btn-danger-outline" onclick="deleteOptionItem('${item.id}')">🗑️</button>
+          </div>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    function addOptionItem() {
+      const nameInput = document.getElementById('modal-input-name');
+      const val = nameInput.value.trim().toUpperCase();
+      if (!val) {
+        mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> INFORME O NOME!', nameInput);
+        return;
+      }
+
+      if (activeManagerType === 'modelos') {
+        const subSelect = document.getElementById('modal-input-sub');
+        const subVal = subSelect.value;
+        if (!subVal) {
+          mostrarAlertaAviso('CAMPO OBRIGATÓRIO', '<span class="text-amber-500 font-bold">ATENÇÃO:</span> SELECIONE UMA MONTADORA PARA O MODELO!', subSelect);
+          return;
+        }
+
+        if (editingOptionId) {
+          const item = modelos.find(m => m.id === editingOptionId);
+          if (item) { item.nome = val; item.montadoraId = subVal; }
+        } else {
+          modelos.push({ id: 'mod_' + Date.now(), nome: val, montadoraId: subVal });
+        }
+        Armazem.ls.setItem(STORAGE_KEYS.MODELOS, JSON.stringify(modelos));
+      } else if (activeManagerType === 'montadoras') {
+        if (editingOptionId) {
+          const item = montadoras.find(m => m.id === editingOptionId);
+          if (item) item.nome = val;
+        } else {
+          montadoras.push({ id: 'm_' + Date.now(), nome: val, tipo: 'carro' });
+        }
+        Armazem.ls.setItem(STORAGE_KEYS.MONTADORAS, JSON.stringify(montadoras));
+      } else if (activeManagerType === 'cores') {
+        if (editingOptionId) {
+          const item = cores.find(c => c.id === editingOptionId);
+          if (item) item.nome = val;
+        } else {
+          cores.push({ id: 'c_' + Date.now(), nome: val });
+        }
+        Armazem.ls.setItem(STORAGE_KEYS.CORES, JSON.stringify(cores));
+      }
+
+      editingOptionId = null;
+      nameInput.value = '';
+      renderSelects();
+      renderModalItems();
+    }
+
+    function editOptionItem(id) {
+      editingOptionId = id;
+      if (activeManagerType === 'modelos') {
+        const item = modelos.find(m => m.id === id);
+        if (item) {
+          document.getElementById('modal-input-name').value = item.nome.toUpperCase();
+          document.getElementById('modal-input-sub').value = item.montadoraId;
+        }
+      } else if (activeManagerType === 'montadoras') {
+        const item = montadoras.find(m => m.id === id);
+        if (item) {
+          document.getElementById('modal-input-name').value = item.nome.toUpperCase();
+        }
+      } else if (activeManagerType === 'cores') {
+        const item = cores.find(c => c.id === id);
+        if (item) {
+          document.getElementById('modal-input-name').value = item.nome.toUpperCase();
+        }
+      }
+    }
+
+    function deleteOptionItem(id) {
+      Swal.fire({
+        title: 'EXCLUIR ITEM?',
+        html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> DESEJA REALMENTE <span class="text-red-500 font-bold">REMOVER ESTE ITEM</span>?',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#000000',
+        confirmButtonText: 'EXCLUIR',
+        cancelButtonText: 'CANCELAR'
+      }).then((result) => {
+        if (result.isConfirmed) {
+          let storageKey = '';
+          if (activeManagerType === 'modelos') {
+            modelos = modelos.filter(m => m.id !== id);
+            storageKey = STORAGE_KEYS.MODELOS;
+            Armazem.ls.setItem(storageKey, JSON.stringify(modelos));
+          } else if (activeManagerType === 'montadoras') {
+            montadoras = montadoras.filter(m => m.id !== id);
+            storageKey = STORAGE_KEYS.MONTADORAS;
+            Armazem.ls.setItem(storageKey, JSON.stringify(montadoras));
+          } else if (activeManagerType === 'cores') {
+            cores = cores.filter(c => c.id !== id);
+            storageKey = STORAGE_KEYS.CORES;
+            Armazem.ls.setItem(storageKey, JSON.stringify(cores));
+          }
+
+          if (storageKey) {
+            const delKey = STORAGE_KEYS.DELETED_PREFIX + storageKey;
+            const excluidos = JSON.parse(Armazem.ls.getItem(delKey)) || [];
+            if (!excluidos.includes(id)) {
+              excluidos.push(id);
+              Armazem.ls.setItem(delKey, JSON.stringify(excluidos));
+            }
+          }
+
+          renderSelects();
+          renderModalItems();
+        }
+      });
+    }
+  </script>
+<script>
+/* Campos numéricos: texto + teclado numérico (evita o navegador apagar o valor mascarado) */
+document.addEventListener('input', function (e) {
+    var t = e.target;
+    if (t && t.hasAttribute && t.hasAttribute('data-so-numeros')) {
+        var v = t.value.replace(/\D/g, '');
+        if (v !== t.value) t.value = v;
+    }
+});
+</script>
+<script>
+(function () {
+    if (window.Armazem) return;
+    var d = document.createElement('div');
+    d.setAttribute('style', 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:99999;background:#fff;color:#b91c1c;font:700 16px sans-serif;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;text-transform:uppercase');
+    d.textContent = 'ARQUIVO "armazem.js" NÃO ENCONTRADO. COPIE armazem.js, nuvem.js E firebase-config.js PARA A MESMA PASTA DESTA PÁGINA.';
+    document.body.appendChild(d);
+})();
+</script>
+</body>
+</html>

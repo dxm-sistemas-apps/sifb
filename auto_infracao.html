@@ -1,0 +1,1458 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AUTO DE INFRAÇÃO - DETRAN.RJ</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="firebase-config.js"></script>
+    <script src="armazem.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- SweetAlert2 CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <!-- Alertas SweetAlert2 sempre centralizados e totalmente visíveis na parte visível da tela -->
+    <script>
+    (function () {
+        if (typeof Swal === 'undefined') return;
+
+        // Mantém o contêiner do alerta exatamente sobre a área VISÍVEL (considera zoom, barra do navegador e teclado)
+        function ajustarAreaVisivel() {
+            const c = document.querySelector('.swal2-container');
+            const vv = window.visualViewport;
+            if (!c || !vv) return;
+            c.style.setProperty('top', vv.offsetTop + 'px', 'important');
+            c.style.setProperty('left', vv.offsetLeft + 'px', 'important');
+            c.style.setProperty('width', vv.width + 'px', 'important');
+            c.style.setProperty('height', vv.height + 'px', 'important');
+            c.style.setProperty('right', 'auto', 'important');
+            c.style.setProperty('bottom', 'auto', 'important');
+        }
+        function ativarAreaVisivel() {
+            ajustarAreaVisivel();
+            if (window.visualViewport) {
+                window.visualViewport.addEventListener('resize', ajustarAreaVisivel);
+                window.visualViewport.addEventListener('scroll', ajustarAreaVisivel);
+            }
+            window.addEventListener('resize', ajustarAreaVisivel);
+        }
+        function desativarAreaVisivel() {
+            if (window.visualViewport) {
+                window.visualViewport.removeEventListener('resize', ajustarAreaVisivel);
+                window.visualViewport.removeEventListener('scroll', ajustarAreaVisivel);
+            }
+            window.removeEventListener('resize', ajustarAreaVisivel);
+        }
+
+        const fireOriginal = Swal.fire.bind(Swal);
+        Swal.fire = function (...args) {
+            if (args.length && args[0] && typeof args[0] === 'object') {
+                const opcoes = Object.assign({ position: 'center', heightAuto: false, scrollbarPadding: false }, args[0]);
+                // Botões padronizados: EXCLUIR PDF (excluir vermelho / cancelar preto) e CAMPO OBRIGATÓRIO (OK preto)
+                const tituloAlertaPadrao = String(opcoes.title || '').toUpperCase();
+                if (tituloAlertaPadrao.indexOf('EXCLUIR PDF') !== -1) { opcoes.confirmButtonColor = '#ef4444'; opcoes.cancelButtonColor = '#000000'; }
+                if (tituloAlertaPadrao.indexOf('CAMPO OBRIGAT') !== -1) { opcoes.confirmButtonColor = '#000000'; }
+                opcoes.customClass = Object.assign({}, opcoes.customClass);
+                opcoes.customClass.popup = ('font-sans ' + (opcoes.customClass.popup || '')).trim();
+                const didOpenOriginal = opcoes.didOpen;
+                const didCloseOriginal = opcoes.didClose;
+                opcoes.didOpen = function (...a) {
+                    ativarAreaVisivel();
+                    if (typeof didOpenOriginal === 'function') return didOpenOriginal.apply(this, a);
+                };
+                opcoes.didClose = function (...a) {
+                    desativarAreaVisivel();
+                    if (typeof didCloseOriginal === 'function') return didCloseOriginal.apply(this, a);
+                };
+                args[0] = opcoes;
+            }
+            return fireOriginal(...args);
+        };
+    })();
+    </script>
+    <style>
+        .swal2-container {
+            position: fixed !important;
+            top: 0 !important; right: 0 !important; bottom: 0 !important; left: 0 !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            box-sizing: border-box !important;
+            padding: 12px !important;
+            overflow-y: auto !important;
+        }
+        .swal2-popup {
+            box-sizing: border-box !important;
+            margin: auto !important;
+            max-width: 100% !important;
+            max-height: calc(100vh - 24px);
+            max-height: calc(100dvh - 24px);
+            overflow-y: auto;
+        }
+        .swal2-title,
+        .swal2-html-container {
+            overflow-wrap: anywhere;
+            word-break: break-word;
+        }
+        .swal2-html-container {
+            max-height: 55vh;
+            max-height: 55dvh;
+            overflow-y: auto;
+        }
+    </style>
+    <!-- Ano vigente: atualiza sozinho a cada ano (nada de "2026" fixo) -->
+    <script>
+    window.ANO_VIGENTE = new Date().getFullYear();
+    document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('.js-ano').forEach(function (e) { e.textContent = window.ANO_VIGENTE; });
+    });
+    // Processo SEI: "SEI-" e o ano ficam fixos fora do campo; o usuário digita só os números (XXXXXX/XXXXXX)
+    function formatarProcessoSEI(v) {
+        var d = String(v || '').replace(/^\s*SEI-?/i, '').replace(/\D/g, '').slice(0, 12);
+        return d.length > 6 ? d.slice(0, 6) + '/' + d.slice(6) : d;
+    }
+    function processoCompletoSEI(id) {
+        var el = document.getElementById(id);
+        var v = el ? el.value.trim() : '';
+        return v ? 'SEI-' + v + '/' + window.ANO_VIGENTE : '';
+    }
+    function campoVazio(el) {
+        var v = el.value.trim();
+        if (!v) return true;
+        return el.dataset && el.dataset.processoSei ? v.length < 13 : false;
+    }
+    document.addEventListener('input', function (e) {
+        if (e.target && e.target.dataset && e.target.dataset.processoSei) e.target.value = formatarProcessoSEI(e.target.value);
+    }, true);
+    </script>
+
+    <!-- html2pdf.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+    <style>
+        :root {
+            --card-bg: #ffffff;
+            --text-main: #111827;
+            --text-muted: #6b7280;
+            --border-color: #e5e7eb;
+            --primary-dark: #0f172a;
+            --radius: 6px;
+        }
+
+        body {
+            background-color: #f1f5f9;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        input[type="text"], textarea {
+            text-transform: uppercase;
+        }
+
+        canvas {
+            touch-action: none;
+        }
+
+        .modal-active {
+            display: flex !important;
+        }
+
+        /* Estilos do Histórico */
+        .card { background: var(--card-bg); border-radius: var(--radius); padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid var(--border-color); }
+        .section-title { font-size: 0.8rem; font-weight: 800; color: var(--primary-dark); text-transform: uppercase; margin-bottom: 12px; letter-spacing: 0.5px; display: flex; justify-content: space-between; align-items: center; }
+        .pdf-history-header { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+        .pdf-search-wrapper { position: relative; }
+        .pdf-search-wrapper input { width: 100%; padding: 10px 12px 10px 32px; border: 1px solid var(--border-color); border-radius: var(--radius); font-size: 0.85rem; background-color: #f9fafb; color: var(--text-main); outline: none; transition: border-color 0.2s, box-shadow 0.2s; text-transform: uppercase; margin: 0; box-sizing: border-box; }
+        .pdf-search-wrapper input:focus { border-color: var(--primary-dark); background-color: #fff; }
+        .pdf-search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-size: 0.8rem; color: var(--text-muted); pointer-events: none; }
+        .pdf-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+        .pdf-card { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: #f9fafb; border: 1px solid var(--border-color); border-radius: var(--radius); padding: 10px 12px; }
+        .pdf-card-info { display: flex; align-items: center; gap: 10px; overflow: hidden; cursor: pointer; }
+        .pdf-card-icon { font-size: 1.6rem; flex-shrink: 0; }
+        .pdf-card-text { overflow: hidden; }
+        .pdf-card-title { font-size: 0.8rem; font-weight: 800; color: var(--primary-dark); text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .pdf-card-meta { font-size: 0.65rem; color: var(--text-muted); margin-top: 2px; }
+        .pdf-card-actions { display: flex; gap: 4px; flex-shrink: 0; }
+        .btn-icon-pdf { background: none; border: none; cursor: pointer; font-size: 1rem; padding: 4px 6px; border-radius: 4px; transition: background 0.15s; }
+        .btn-icon-pdf:hover { background: rgba(0, 0, 0, 0.06); }
+        .pdf-empty-state { text-align: center; padding: 24px 12px; border: 1px dashed var(--border-color); border-radius: var(--radius); font-size: 0.7rem; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+
+        .preview-container {
+            overflow-x: auto;
+        }
+
+        .pdf-document {
+            font-family: 'Times New Roman', Times, serif;
+            color: #000000 !important;
+            background-color: #ffffff !important;
+            text-transform: uppercase !important;
+            position: relative;
+            line-height: 1.42;
+            box-sizing: border-box !important;
+            padding: 24px 30px !important;
+            width: 750px !important;
+            max-width: 750px !important;
+            min-width: 750px !important;
+            margin: 0 auto !important;
+            overflow: hidden;
+        }
+
+        /* Marca d'água oficial DETRAN RJ */
+        .pdf-watermark {
+            position: absolute;
+            top: 52%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-30deg);
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 96px;
+            font-weight: 900;
+            letter-spacing: 4px;
+            color: rgba(0, 0, 0, 0.075);
+            white-space: nowrap;
+            pointer-events: none;
+            user-select: none;
+            z-index: 0;
+        }
+
+        .pdf-content-inner {
+            position: relative;
+            z-index: 1;
+        }
+
+        .pdf-document p {
+            text-align: justify;
+            text-justify: inter-word;
+            margin-bottom: 0.65rem;
+            font-size: 11px;
+            color: #000000 !important;
+        }
+
+        @media print {
+            .no-print, #barra-acoes, button, #secao-historico-pdf {
+                display: none !important;
+            }
+        }
+
+        .campo-invalido {
+            border-color: #dc2626 !important;
+            background-color: #fef2f2 !important;
+            box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.25) !important;
+        }
+        .grupo-invalido {
+            border: 1px solid #dc2626 !important;
+            background-color: #fef2f2 !important;
+            border-radius: 8px;
+            padding: 8px;
+        }
+
+        .btn-scroll-dir {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #1e3a8a, #0f172a);
+            color: #ffffff;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            border: 1px solid rgba(255,255,255,0.15);
+            cursor: pointer;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .btn-scroll-dir:hover {
+            transform: translateY(-2px) scale(1.08);
+            box-shadow: 0 6px 14px rgba(0,0,0,0.3);
+            background: linear-gradient(135deg, #2563eb, #1e293b);
+        }
+        @keyframes bounceSubtle {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(3px); }
+        }
+        .anim-bounce {
+            animation: bounceSubtle 1.8s infinite ease-in-out;
+        }
+    
+        /* Cabeçalho do PDF: mesmas medidas do PDF da página carro (brasão 24 mm; títulos 12/10/9/9 pt; linhas de 5,5 mm) */
+        .pdf-document { --mm: 3.7129px; }
+        .cab-pdf-logo-wrap { display: flex; justify-content: center; margin: 0 0 calc(var(--mm) * 4) 0; }
+        .cab-pdf-logo { width: calc(var(--mm) * 24); height: calc(var(--mm) * 24); object-fit: contain; }
+        .cab-pdf-t1, .cab-pdf-t2, .cab-pdf-t3 { font-family: Helvetica, Arial, sans-serif !important; color: #000 !important; text-align: center; text-transform: uppercase !important; margin: 0 !important; line-height: calc(var(--mm) * 5.5) !important; }
+        .cab-pdf-t1 { font-size: calc(var(--mm) * 4.2333) !important; font-weight: bold !important; }
+        .cab-pdf-t2 { font-size: calc(var(--mm) * 3.5278) !important; font-weight: bold !important; }
+        .cab-pdf-t3 { font-size: calc(var(--mm) * 3.175) !important; font-weight: normal !important; }
+    </style>
+<style>
+/* Cards e modal de assinatura: todos os caracteres em maiúsculo */
+.bloco-assinatura, .bloco-assinatura *,
+[id^="box"], [id^="box"] *,
+#signatureModal, #signatureModal * { text-transform: uppercase !important; }
+.bloco-assinatura ::placeholder, #signatureModal ::placeholder { text-transform: uppercase !important; }
+</style>
+</head>
+<body class="text-slate-800 antialiased pb-12 relative">
+
+    <!-- Header Navigation -->
+    <header class="bg-[#001039] text-white shadow-md">
+        <div class="max-w-5xl mx-auto px-4 py-3 flex flex-col items-center justify-center text-center">
+            <div class="bg-blue p-1.5 rounded-lg shadow-sm mb-2">
+                <img id="appLogo" class="h-64 object-contain" alt="Logo DGAD Suporte">
+            </div>
+            
+        </div>
+    </header>
+
+    <div class="max-w-4xl mx-auto bg-white p-2 sm:p-8 mt-0 sm:mt-6 shadow-md rounded-none sm:rounded-lg border border-gray-200">
+        <main class="max-w-5xl mx-auto px-2 sm:px-4">
+            
+            <div class="space-y-6">
+                <!-- Cabeçalho Oficial com Brasão -->
+                <header class="font-sans text-gray-800 text-center border-b-2 border-gray-800 pb-4 mb-6">
+                    <div class="flex justify-center mb-3">
+                        <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e2/Ins%C3%ADgnia_bras%C3%A3o_estilizado_governos_Wilson_Witzel_e_Cl%C3%A1udio_Castro_RJ.png/500px-Ins%C3%ADgnia_bras%C3%A3o_estilizado_governos_Wilson_Witzel_e_Cl%C3%A1udio_Castro_RJ.png" alt="Brasão do Estado do Rio de Janeiro" class="h-24 w-auto object-contain">
+                    </div>
+                    <h1 class="text-lg sm:text-xl font-bold uppercase tracking-wide">Governo do Estado do Rio de Janeiro</h1>
+            <h2 class="text-md sm:text-lg font-semibold uppercase">Departamento de Trânsito do Estado do Rio de Janeiro - DETRAN.RJ</h2>
+            <h3 class="text-sm sm:text-md font-medium text-black-600 uppercase mt-1">Diretoria Geral das Atividades de Desmontagem</h3>
+            <h3 class="text-sm sm:text-md font-medium text-black-600 uppercase mt-1">DIVISÃO DE FISCALIZAÇÃO</h3>
+                                            
+                </header>
+
+                <!-- Card 1: Identificação -->
+                <div class="flex justify-between items-left mb-2 no-print">
+                    <span class="text-xs font-bold text-gray-500 uppercase tracking-wider"></span>
+                    
+                </div>
+
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                    <div class="flex items-center space-x-2 border-b border-slate-100 pb-3 mb-4">
+                        <i data-lucide="shield-alert" class="w-5 h-5 text-blue-900"></i>
+                        <h2 class="font-bold text-slate-800 text-lg">DADOS DO AUTO E INFRATOR</h2>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1">
+                                Auto de Infração nº
+                            </label>
+                            <div class="flex items-center">
+                                <input data-so-numeros type="text" inputmode="numeric" autocomplete="off" id="inputNumAuto" placeholder="001" 
+                                    class="w-full px-3 py-2 rounded-l-lg border border-slate-300 focus:ring-2 focus:ring-blue-600 text-sm">
+                                <span class="bg-slate-100 px-3 py-2 border border-l-0 border-slate-300 rounded-r-lg text-sm font-bold text-slate-600">/<span class="js-ano">2026</span></span>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1">Data</label>
+                            <input type="date" id="inputDataAuto" class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1">Hora</label>
+                            <input type="time" id="inputHoraAuto" class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                        </div>
+
+                        <div class="md:col-span-3">
+                            <label class="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1">Processo nº</label>
+                            <div class="flex items-center">
+                                <span class="bg-slate-100 px-3 py-2 border border-r-0 border-slate-300 rounded-l-lg text-sm font-bold text-slate-600">SEI-</span>
+                                <input type="text" inputmode="numeric" autocomplete="off" maxlength="13" data-processo-sei="1" id="inputProcesso" placeholder="XXXXXX/XXXXXX"
+                                    class="w-full px-3 py-2 border border-slate-300 focus:ring-2 focus:ring-blue-600 text-sm min-w-0">
+                                <span class="bg-slate-100 px-3 py-2 border border-l-0 border-slate-300 rounded-r-lg text-sm font-bold text-slate-600">/<span class="js-ano">2026</span></span>
+                            </div>
+                        </div>
+
+                        <div class="md:col-span-2">
+                            <label class="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1">EMPRESA / ESTABELECIMENTO *</label>
+                            <input type="text" id="inputRazaoSocial" placeholder="NOME OU RAZÃO SOCIAL" class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1">CNPJ *</label>
+                            <input type="text" inputmode="numeric" autocomplete="off" id="inputCNPJ" placeholder="00.000.000/0001-00" maxlength="18" class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                        </div>
+
+                        <div class="md:col-span-2">
+                            <label class="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1">Endereço</label>
+                            <input type="text" id="inputEndereco" placeholder="LOGRADOURO, Nº" class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1">Bairro</label>
+                            <input type="text" id="inputBairro" placeholder="BAIRRO" class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1">Cidade</label>
+                            <input type="text" id="inputCidade" value="RIO DE JANEIRO" class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1">Inscrição Estadual</label>
+                            <input type="text" id="inputIE" placeholder="ISENTO OU NÚMERO" class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1">Estado</label>
+                            <input type="text" id="inputEstado" value="RJ" readonly class="w-full px-3 py-2 bg-slate-100 rounded-lg border border-slate-300 text-sm font-semibold">
+                        </div>
+
+                        <div class="md:col-span-2">
+                            <label class="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1">Nome do Representante *</label>
+                            <input type="text" id="inputRepresentante" placeholder="NOME DO REPRESENTANTE / RESPONSÁVEL" class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1">CPF *</label>
+                            <input type="text" inputmode="numeric" autocomplete="off" id="inputCPF" placeholder="000.000.000-00" maxlength="14" class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Card 2: Tipificação da Infração -->
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                    <div class="flex items-center space-x-2 border-b border-slate-100 pb-3 mb-4">
+                        <i data-lucide="alert-triangle" class="w-5 h-5 text-blue-900"></i>
+                        <h2 class="font-bold text-slate-800 text-lg">TIPIFICAÇÃO DA INFRAÇÃO E EMBASAMENTO LEGAL</h2>
+                    </div>
+
+                    <div class="space-y-3" id="grupoInfracoes">
+                        <label class="flex items-start space-x-2 cursor-pointer">
+                            <input type="checkbox" id="checkInfracao1" class="mt-1 h-4 w-4 text-blue-900 rounded" onchange="updatePreview()">
+                            <span class="text-xs sm:text-sm text-slate-700 uppercase"><b>Infração Grave</b> - Art. 16 VIII da Lei Federal nº. 12.977/2014 - Estabelecimento não credenciado junto ao Departamento Estadual de Trânsito;</span>
+                        </label>
+
+                        <label class="flex items-start space-x-2 cursor-pointer">
+                            <input type="checkbox" id="checkInfracao2" class="mt-1 h-4 w-4 text-blue-900 rounded" onchange="updatePreview()">
+                            <span class="text-xs sm:text-sm text-slate-700 uppercase"><b>Outras Infrações</b> - Tipificar no campo "Obs."</span>
+                        </label>
+
+                        <label class="flex items-start space-x-2 cursor-pointer">
+                            <input type="checkbox" id="checkInfracao3" class="mt-1 h-4 w-4 text-blue-900 rounded" onchange="updatePreview()">
+                            <span class="text-xs sm:text-sm text-slate-700 uppercase"><b>Recolhimento do Material</b> - Art. 4° § 3º Decreto Estadual nº. 48.642/2023.</span>
+                        </label>
+
+                        <label class="flex items-start space-x-2 cursor-pointer">
+                            <input type="checkbox" id="checkInfracao4" class="mt-1 h-4 w-4 text-blue-900 rounded" onchange="updatePreview()">
+                            <span class="text-xs sm:text-sm text-slate-700 uppercase"><b>Material Cautelarmente Apreendido</b></span>
+                        </label>
+
+                        <div class="pt-3">
+                            <label class="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1">Obs. (Caso assinalado Outras Infrações)</label>
+                            <input type="text" id="inputObs" placeholder="DISCRIMINE AS OBSERVAÇÕES OU OUTRAS INFRAÇÕES" class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                        </div>
+
+                        <div class="pt-2">
+                            <label class="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1">Relatório da Infração e Descritivo do material encontrado *</label>
+                            <textarea id="inputRelatorio" rows="3" placeholder="DESCREVA A INFRAÇÃO CONSTATADA E OS MATERIAIS ENCONTRADOS NO LOCAL" class="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Card 3: Assinaturas -->
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                    <div class="flex items-center space-x-2 border-b border-slate-100 pb-3 mb-4">
+                        <i data-lucide="pen-tool" class="w-5 h-5 text-blue-900"></i>
+                        <h2 class="font-bold text-slate-800 text-lg">ASSINATURAS DOS ENVOLVIDOS</h2>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <!-- Responsável Infrator -->
+                        <div id="boxInfrator" class="bg-slate-50 p-4 rounded-lg border border-slate-200 flex flex-col justify-between">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Responsável Infrator *</label>
+                                <input type="text" id="inputInfratorNome" placeholder="NOME DO RESPONSÁVEL" class="w-full px-3 py-2 bg-white rounded border border-slate-300 text-xs mb-2">
+                                <div class="h-20 bg-white border border-slate-200 rounded flex items-center justify-center p-1 mb-2">
+                                    <img id="previewSignInfrator" class="max-h-full max-w-full hidden object-contain">
+                                    <span id="placeholderSignInfrator" class="text-xs text-slate-400 italic"> </span>
+                                </div>
+                            </div>
+                            <button type="button" onclick="openSignatureModal('Infrator', 'Responsável Infrator')"
+                                class="w-full py-2 bg-blue-900 hover:bg-blue-800 text-white font-semibold text-xs rounded shadow transition flex items-center justify-center space-x-1">
+                                <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
+                                <span>ASSINAR</span>
+                            </button>
+                        </div>
+
+                        <!-- Membro Força Tarefa 1 -->
+                        <div id="boxFT1" class="bg-slate-50 p-4 rounded-lg border border-slate-200 flex flex-col justify-between">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Membro Força-Tarefa 1 *</label>
+                                <input type="text" id="inputFT1Nome" placeholder="NOME DO AGENTE" class="w-full px-3 py-1.5 bg-white rounded border border-slate-300 text-xs mb-1">
+                                <input type="text" inputmode="numeric" autocomplete="off" id="inputFT1Id" placeholder="ID FUNCIONAL" maxlength="9" class="w-full px-3 py-1.5 bg-white rounded border border-slate-300 text-xs mb-2">
+                                <div class="h-16 bg-white border border-slate-200 rounded flex items-center justify-center p-1 mb-2">
+                                    <img id="previewSignFT1" class="max-h-full max-w-full hidden object-contain">
+                                    <span id="placeholderSignFT1" class="text-xs text-slate-400 italic"> </span>
+                                </div>
+                            </div>
+                            <button type="button" onclick="openSignatureModal('FT1', 'Membro da Força-Tarefa 1')"
+                                class="w-full py-2 bg-blue-900 hover:bg-blue-800 text-white font-semibold text-xs rounded shadow transition flex items-center justify-center space-x-1">
+                                <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
+                                <span>ASSINAR</span>
+                            </button>
+                        </div>
+
+                        <!-- Membro Força Tarefa 2 -->
+                        <div id="boxFT2" class="bg-slate-50 p-4 rounded-lg border border-slate-200 flex flex-col justify-between">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Membro Força-Tarefa 2</label>
+                                <input type="text" id="inputFT2Nome" placeholder="NOME DO AGENTE" class="w-full px-3 py-1.5 bg-white rounded border border-slate-300 text-xs mb-1">
+                                <input type="text" inputmode="numeric" autocomplete="off" id="inputFT2Id" placeholder="ID FUNCIONAL" maxlength="9" class="w-full px-3 py-1.5 bg-white rounded border border-slate-300 text-xs mb-2">
+                                <div class="h-16 bg-white border border-slate-200 rounded flex items-center justify-center p-1 mb-2">
+                                    <img id="previewSignFT2" class="max-h-full max-w-full hidden object-contain">
+                                    <span id="placeholderSignFT2" class="text-xs text-slate-400 italic"> </span>
+                                </div>
+                            </div>
+                            <button type="button" onclick="openSignatureModal('FT2', 'Membro da Força-Tarefa 2')"
+                                class="w-full py-2 bg-blue-900 hover:bg-blue-800 text-white font-semibold text-xs rounded shadow transition flex items-center justify-center space-x-1">
+                                <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
+                                <span>ASSINAR</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Botões de Ação -->
+                <div class="flex flex-col sm:flex-row flex-wrap gap-3 justify-end items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200 no-print">
+                    <button type="button" onclick="confirmClearAllForm()" 
+                        class="w-full sm:w-auto px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white font-bold rounded-lg text-sm border border-red-200 transition flex items-center justify-center space-x-2">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        <span>LIMPAR PÁGINA</span>
+                    </button>
+
+                    <button type="button" onclick="scrollToPreview()" 
+                        class="w-full sm:w-auto px-5 py-2.5 bg-slate-100 hover:bg-slate-500 text-white font-bold rounded-lg text-sm transition flex items-center justify-center space-x-2">
+                        <i data-lucide="eye" class="w-4 h-4"></i>
+                        <span>VISUALIZAR PRÉVIA</span>
+                    </button>
+
+                    <button type="button" onclick="generatePDF(true)" 
+                        class="w-full sm:w-auto px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg text-sm shadow-md transition flex items-center justify-center space-x-2">
+                        <i data-lucide="file-check-2" class="w-4 h-4"></i>
+                        <span>GERAR PDF</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- PREVIEW CONTAINER -->
+            <div id="previewAnchor" class="mt-10 mb-12">
+                <div class="preview-container bg-slate-200 p-2 sm:p-6 rounded-xl shadow-inner border border-slate-300">
+                    <div class="mx-auto shadow-xl border border-slate-300 bg-white" style="width: 750px;">
+                        <div id="pdfContent" class="pdf-document">
+                            
+                            <!-- Marca d'água oficial DETRAN RJ -->
+                            <div class="pdf-watermark">DETRAN RJ</div>
+
+                            <div class="pdf-content-inner">
+                                <!-- Cabeçalho -->
+                                <div style="text-align: left; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 14px;">
+                                    <div style="display: flex; justify-content: center; margin-bottom: 6px;">
+                                        <header class="text-center border-b-2 border-gray-800 pb-4 mb-6">
+                                            <div class="cab-pdf-logo-wrap">
+                                                <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e2/Ins%C3%ADgnia_bras%C3%A3o_estilizado_governos_Wilson_Witzel_e_Cl%C3%A1udio_Castro_RJ.png/500px-Ins%C3%ADgnia_bras%C3%A3o_estilizado_governos_Wilson_Witzel_e_Cl%C3%A1udio_Castro_RJ.png" alt="Brasão do Estado do Rio de Janeiro" class="cab-pdf-logo">
+                                            </div>
+                                            <h1 class="cab-pdf-t1">Governo do Estado do Rio de Janeiro</h1>
+                                            <h2 class="cab-pdf-t2">Departamento de Trânsito do Estado do Rio de Janeiro - DETRAN.RJ</h2>
+                                            <h3 class="cab-pdf-t3">Diretoria Geral das Atividades de Desmontagem</h3>
+                                            <h3 class="cab-pdf-t3">DIVISÃO DE FISCALIZAÇÃO</h3>
+                                            <h1 style="font-size: 12.5px; font-weight: bold; margin-top: 8px; text-transform: uppercase;">
+                                                AUTO DE INFRAÇÃO Nº <span id="docNumAuto">______</span>/<span class="js-ano">2026</span>
+                                            </h1>
+                                        </header>
+                                    </div>
+                                </div>
+
+                                <!-- Info Linha Superior -->
+                                <table style="width: 100%; font-size: 10.5px; margin-bottom: 12px; border-collapse: collapse;">
+                                    <tr>
+                                        <td style="width: 35%; padding-bottom: 4px;"><strong>Data:</strong> <span id="docDataAuto">__/__/<span class="js-ano">2026</span></span></td>
+                                        <td style="width: 30%;"><strong>Hora:</strong> <span id="docHoraAuto">__:__</span></td>
+                                        <td style="width: 35%;"><strong>Processo:</strong> <span id="docProcesso">____________________</span></td>
+                                    </tr>
+                                </table>
+
+                                <!-- Tabela Identificação Cadastral -->
+                                <table style="width: 100%; font-size: 10.5px; margin-bottom: 12px; border: 1px solid #000; border-collapse: collapse;">
+                                    <tr>
+                                        <td colspan="2" style="border: 1px solid #000; padding: 6px;"><strong>EMPRESA / ESTABELECIMENTO:</strong> <span id="docRazaoSocial">____________________</span></td>
+                                    </tr>
+                                    <tr>
+                                        <td colspan="2" style="border: 1px solid #000; padding: 6px;"><strong>Endereço:</strong> <span id="docEndereco">____________________</span></td>
+                                    </tr>
+                                    <tr>
+                                        <td style="border: 1px solid #000; padding: 6px; width: 50%;"><strong>Bairro:</strong> <span id="docBairro">____________________</span></td>
+                                        <td style="border: 1px solid #000; padding: 6px; width: 50%;"><strong>Cidade:</strong> <span id="docCidade">RIO DE JANEIRO</span> - <strong>Estado:</strong> RJ</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="border: 1px solid #000; padding: 6px;"><strong>CNPJ:</strong> <span id="docCNPJ">__.___.___/____-__</span></td>
+                                        <td style="border: 1px solid #000; padding: 6px;"><strong>Inscrição Estadual:</strong> <span id="docIE">____________________</span></td>
+                                    </tr>
+                                    <tr>
+                                        <td style="border: 1px solid #000; padding: 6px;"><strong>Nome do Representante:</strong> <span id="docRepresentante">____________________</span></td>
+                                        <td style="border: 1px solid #000; padding: 6px;"><strong>CPF:</strong> <span id="docCPF">___.___.___-__</span></td>
+                                    </tr>
+                                </table>
+
+                                <!-- Embasamento Legal -->
+                                <div style="font-weight: bold; font-size: 11px; margin-top: 10px; margin-bottom: 6px; text-decoration: underline;">
+                                    Tipificação da Infração e o Embasamento Legal:
+                                </div>
+                                <div style="font-size: 10px; line-height: 1.6; margin-bottom: 8px;">
+                                    <div id="docInfracao1">( ) Infração Grave - Art. 16 VIII da Lei Federal nº. 12.977/2014 - Estabelecimento não credenciado junto ao Departamento Estadual de Trânsito;</div>
+                                    <div id="docInfracao2">( ) Outras Infrações - Tipificar no campo "Obs."</div>
+                                    <div id="docInfracao3">( ) Recolhimento do Material - Art. 4° § 3º Decreto Estadual nº. 48.642/2023.</div>
+                                    <div id="docInfracao4">( ) Material Cautelarmente Apreendido</div>
+                                </div>
+
+                                <div style="font-size: 10px; margin-bottom: 10px; word-break: break-word;">
+                                    <strong>Obs.:</strong> <span id="docObs" style="text-decoration: underline;">__________________________________________________________________________________</span>
+                                </div>
+
+                                <!-- Relatório da Infração -->
+                                <div style="font-weight: bold; font-size: 11px; margin-top: 10px; margin-bottom: 6px; text-decoration: underline;">
+                                    Relatório da Infração e Descritivo do material encontrado:
+                                </div>
+                                <div id="docRelatorio" style="font-size: 10.5px; line-height: 1.4; min-height: 48px; border: 1px solid #666; padding: 8px; margin-bottom: 12px; text-align: justify; word-break: break-word;">
+                                    Nenhum relatório informado.
+                                </div>
+
+                                <!-- Texto Cautelar e Prazo Defesa -->
+                                <p style="font-size: 10px; line-height: 1.5; margin-bottom: 10px;">
+                                    Em caso de material cautelarmente apreendido, não havendo a comprovação de origem lícita do material, em até 05 (cinco) dias úteis, através da apresentação das notas fiscais originais em nome da empresa ou do sócio, o Detran.RJ convocará Empresa de Reciclagem credenciada que efetuará a remoção, inutilização e a devida destinação final do material para Empresa de Siderurgia, não cabendo ao autuado nenhuma forma de ressarcimento do valor apurado.
+                                </p>
+
+                                <p style="font-size: 10px; line-height: 1.5; margin-bottom: 14px;">
+                                    Lavrei o presente AUTO DE INFRAÇÃO em três vias, que vão por mim e pelo infrator assinadas, ficando uma via em seu poder, a fim de que, querendo, apresente defesa, no prazo de dez dias a contar da notificação, no Departamento de Trânsito do Estado do Rio de Janeiro - DETRAN.RJ, à Av. Presidente Vargas, 817, 2º andar, Rio de Janeiro/RJ, por meio de petição.
+                                </p>
+
+                                <!-- Assinaturas -->
+                                <div style="margin-top: 26px; display: table; width: 100%; table-layout: fixed;">
+                                    <div style="display: table-cell; text-align: center; vertical-align: bottom; width: 33%; padding: 0 8px;">
+                                        <div style="height: 38px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 2px;">
+                                            <img id="imgSignInfrator" style="max-height: 38px; max-width: 100%; visibility: hidden;">
+                                        </div>
+                                        <div style="border-top: 1px solid #000; padding-top: 2px;">
+                                            <span id="docNomeInfrator" style="font-weight: bold; font-size: 9px; text-transform: uppercase; display: block;">RESPONSÁVEL INFRATOR</span>
+                                            <span style="font-size: 8.5px;">Assinatura do Responsável Infrator</span>
+                                            <span style="font-size: 8px; display: block;">CPF: <span id="docCpfInfrator">___.___.___-__</span></span>
+                                        </div>
+                                    </div>
+
+                                    <div style="display: table-cell; text-align: center; vertical-align: bottom; width: 33%; padding: 0 8px;">
+                                        <div style="height: 38px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 2px;">
+                                            <img id="imgSignFT1" style="max-height: 38px; max-width: 100%; visibility: hidden;">
+                                        </div>
+                                        <div style="border-top: 1px solid #000; padding-top: 2px;">
+                                            <span id="docNomeFT1" style="font-weight: bold; font-size: 9px; text-transform: uppercase; display: block;">FORÇA-TAREFA</span>
+                                            <span style="font-size: 8.5px;">Assinatura Membro Força-Tarefa</span>
+                                            <span style="font-size: 8px; display: block;">Id. Funcional: <span id="docIdFT1">________</span></span>
+                                        </div>
+                                    </div>
+
+                                    <div style="display: table-cell; text-align: center; vertical-align: bottom; width: 33%; padding: 0 8px;">
+                                        <div style="height: 38px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: 2px;">
+                                            <img id="imgSignFT2" style="max-height: 38px; max-width: 100%; visibility: hidden;">
+                                        </div>
+                                        <div style="border-top: 1px solid #000; padding-top: 2px;">
+                                            <span id="docNomeFT2" style="font-weight: bold; font-size: 9px; text-transform: uppercase; display: block;">FORÇA-TAREFA</span>
+                                            <span style="font-size: 8.5px;">Assinatura Membro Força-Tarefa</span>
+                                            <span style="font-size: 8px; display: block;">Id. Funcional: <span id="docIdFT2">________</span></span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                               
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- HISTÓRICO DE PDFS -->
+            <div id="secao-historico-pdf" class="card">
+                <div class="pdf-history-header">
+                    <div class="section-title" style="margin-bottom: 0;">
+                        <span>📄 PDF'S GERADOS - AUTO DE INFRAÇÃO</span>
+                        
+                    </div>
+                    <div class="pdf-search-wrapper" style="margin-top: 8px;">
+                        <span class="pdf-search-icon">🔍</span>
+                        <input type="text" id="busca-pdf" oninput="renderizarGridPDFs()" placeholder="BUSCAR POR AUTO, EMPRESA, CNPJ OU DATA...">
+                    </div>
+                </div>
+                <div class="pdf-grid" id="grid-pdfs-container"></div>
+            </div>
+        </main>
+    </div>
+
+    <!-- MODAL DE ASSINATURA -->
+    <div id="signatureModal" class="fixed inset-0 bg-slate-900/70 z-50 hidden items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl max-w-lg w-full p-5 space-y-4">
+            <div class="flex items-center justify-between border-b pb-3">
+                <h3 class="font-bold text-slate-800 text-base" id="modalTitle">ASSINATURA DIGITAL</h3>
+                <button type="button" onclick="closeSignatureModal()" class="text-slate-400 hover:text-slate-600">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <p class="text-xs text-slate-500">Desenhe a assinatura no quadro abaixo:</p>
+            <div class="border-2 border-dashed border-slate-300 rounded-lg bg-slate-50 overflow-hidden relative" style="height: 200px;">
+                <canvas id="modalCanvas" class="w-full h-full bg-white"></canvas>
+            </div>
+            <div class="flex justify-between items-center pt-2">
+                <button type="button" onclick="clearModalCanvas()" class="px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 rounded border border-red-200">
+                    Limpar Tela
+                </button>
+                <div class="flex space-x-2">
+                    <button type="button" onclick="closeSignatureModal()" class="px-4 py-2 bg-slate-100 text-slate-700 font-semibold rounded-lg text-xs">Cancelar</button>
+                    <button type="button" onclick="saveSignature()" class="px-4 py-2 bg-blue-900 hover:bg-blue-800 text-white font-semibold rounded-lg text-xs">Confirmar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="text/armazem">
+        lucide.createIcons();
+        const LOGO_DGAD_SUPORTE = "infracao.png";
+        const STORAGE_KEY = 'detran_auto_infracao_v1';
+        let currentTargetRole = '';
+        let signatures = { Infrator: '', FT1: '', FT2: '' };
+
+        window.addEventListener('DOMContentLoaded', () => {
+            const logoEl = document.getElementById('appLogo');
+            if (logoEl) logoEl.src = LOGO_DGAD_SUPORTE;
+
+            loadSavedData();
+            updatePreview();
+            renderizarGridPDFs();
+        });
+
+        function updatePreview() {
+            // Nº do Auto e Processo
+            document.getElementById('docNumAuto').innerText = (document.getElementById('inputNumAuto').value.trim() || '______').toUpperCase();
+            const dt = document.getElementById('inputDataAuto').value;
+            document.getElementById('docDataAuto').innerText = dt ? dt.split('-').reverse().join('/') : '__/__/' + window.ANO_VIGENTE;
+            document.getElementById('docHoraAuto').innerText = document.getElementById('inputHoraAuto').value || '__:__';
+            document.getElementById('docProcesso').innerText = (processoCompletoSEI('inputProcesso') || '____________________').toUpperCase();
+
+            // Dados Cadastrais
+            document.getElementById('docRazaoSocial').innerText = (document.getElementById('inputRazaoSocial').value.trim() || '____________________').toUpperCase();
+            document.getElementById('docEndereco').innerText = (document.getElementById('inputEndereco').value.trim() || '____________________').toUpperCase();
+            document.getElementById('docBairro').innerText = (document.getElementById('inputBairro').value.trim() || '____________________').toUpperCase();
+            document.getElementById('docCidade').innerText = (document.getElementById('inputCidade').value.trim() || 'RIO DE JANEIRO').toUpperCase();
+            document.getElementById('docCNPJ').innerText = document.getElementById('inputCNPJ').value.trim() || '__.___.___/____-__';
+            document.getElementById('docIE').innerText = (document.getElementById('inputIE').value.trim() || '____________________').toUpperCase();
+            document.getElementById('docRepresentante').innerText = (document.getElementById('inputRepresentante').value.trim() || '____________________').toUpperCase();
+            document.getElementById('docCPF').innerText = document.getElementById('inputCPF').value.trim() || '___.___.___-__';
+
+            // Tipificações
+            const c1 = document.getElementById('checkInfracao1').checked;
+            const c2 = document.getElementById('checkInfracao2').checked;
+            const c3 = document.getElementById('checkInfracao3').checked;
+            const c4 = document.getElementById('checkInfracao4').checked;
+
+            document.getElementById('docInfracao1').innerHTML = `(${c1 ? '<b>X</b>' : '&nbsp;&nbsp;'}) INFRAÇÃO GRAVE - ART. 16 VIII DA LEI FEDERAL Nº. 12.977/2014 - ESTABELECIMENTO NÃO CREDENCIADO JUNTO AO DEPARTAMENTO ESTADUAL DE TRÂNSITO;`;
+            document.getElementById('docInfracao2').innerHTML = `(${c2 ? '<b>X</b>' : '&nbsp;&nbsp;'}) OUTRAS INFRAÇÕES - TIPIFICAR NO CAMPO "OBS."`;
+            document.getElementById('docInfracao3').innerHTML = `(${c3 ? '<b>X</b>' : '&nbsp;&nbsp;'}) RECOLHIMENTO DO MATERIAL - ART. 4° § 3º DECRETO ESTADUAL Nº. 48.642/2023.`;
+            document.getElementById('docInfracao4').innerHTML = `(${c4 ? '<b>X</b>' : '&nbsp;&nbsp;'}) MATERIAL CAUTELARMENTE APREENDIDO`;
+
+            // Observações e Relatório
+            document.getElementById('docObs').innerText = (document.getElementById('inputObs').value.trim() || '__________________________________________________________________________________').toUpperCase();
+            document.getElementById('docRelatorio').innerText = (document.getElementById('inputRelatorio').value.trim() || 'NENHUM RELATÓRIO INFORMADO.').toUpperCase();
+
+            // Assinaturas
+            const infrator = (document.getElementById('inputInfratorNome').value.trim() || document.getElementById('inputRepresentante').value.trim() || 'RESPONSÁVEL INFRATOR').toUpperCase();
+            document.getElementById('docNomeInfrator').innerText = infrator;
+            document.getElementById('docCpfInfrator').innerText = document.getElementById('inputCPF').value.trim() || '___.___.___-__';
+
+            document.getElementById('docNomeFT1').innerText = (document.getElementById('inputFT1Nome').value.trim() || 'FORÇA-TAREFA').toUpperCase();
+            document.getElementById('docIdFT1').innerText = (document.getElementById('inputFT1Id').value.trim() || '________').toUpperCase();
+
+            document.getElementById('docNomeFT2').innerText = (document.getElementById('inputFT2Nome').value.trim() || 'FORÇA-TAREFA').toUpperCase();
+            document.getElementById('docIdFT2').innerText = (document.getElementById('inputFT2Id').value.trim() || '________').toUpperCase();
+
+            saveDataToStorage();
+        }
+
+        function saveDataToStorage() {
+            const formData = {
+                numAuto: document.getElementById('inputNumAuto').value,
+                dataAuto: document.getElementById('inputDataAuto').value,
+                horaAuto: document.getElementById('inputHoraAuto').value,
+                processo: document.getElementById('inputProcesso').value,
+                razao: document.getElementById('inputRazaoSocial').value,
+                cnpj: document.getElementById('inputCNPJ').value,
+                endereco: document.getElementById('inputEndereco').value,
+                bairro: document.getElementById('inputBairro').value,
+                cidade: document.getElementById('inputCidade').value,
+                ie: document.getElementById('inputIE').value,
+                rep: document.getElementById('inputRepresentante').value,
+                cpf: document.getElementById('inputCPF').value,
+                c1: document.getElementById('checkInfracao1').checked,
+                c2: document.getElementById('checkInfracao2').checked,
+                c3: document.getElementById('checkInfracao3').checked,
+                c4: document.getElementById('checkInfracao4').checked,
+                obs: document.getElementById('inputObs').value,
+                relatorio: document.getElementById('inputRelatorio').value,
+                infrator: document.getElementById('inputInfratorNome').value,
+                ft1Nome: document.getElementById('inputFT1Nome').value,
+                ft1Id: document.getElementById('inputFT1Id').value,
+                ft2Nome: document.getElementById('inputFT2Nome').value,
+                ft2Id: document.getElementById('inputFT2Id').value,
+                signatures: signatures
+            };
+            try { Armazem.ls.setItem(STORAGE_KEY, JSON.stringify(formData)); } catch(_) {}
+        }
+
+        function loadSavedData() {
+            const saved = Armazem.ls.getItem(STORAGE_KEY);
+            if (!saved) return;
+            try {
+                const d = JSON.parse(saved);
+                if (d.numAuto !== undefined) document.getElementById('inputNumAuto').value = d.numAuto;
+                if (d.dataAuto !== undefined) document.getElementById('inputDataAuto').value = d.dataAuto;
+                if (d.horaAuto !== undefined) document.getElementById('inputHoraAuto').value = d.horaAuto;
+                if (d.processo !== undefined) document.getElementById('inputProcesso').value = formatarProcessoSEI(d.processo);
+                if (d.razao !== undefined) document.getElementById('inputRazaoSocial').value = d.razao;
+                if (d.cnpj !== undefined) document.getElementById('inputCNPJ').value = d.cnpj;
+                if (d.endereco !== undefined) document.getElementById('inputEndereco').value = d.endereco;
+                if (d.bairro !== undefined) document.getElementById('inputBairro').value = d.bairro;
+                if (d.cidade !== undefined) document.getElementById('inputCidade').value = d.cidade;
+                if (d.ie !== undefined) document.getElementById('inputIE').value = d.ie;
+                if (d.rep !== undefined) document.getElementById('inputRepresentante').value = d.rep;
+                if (d.cpf !== undefined) document.getElementById('inputCPF').value = d.cpf;
+                if (d.c1 !== undefined) document.getElementById('checkInfracao1').checked = d.c1;
+                if (d.c2 !== undefined) document.getElementById('checkInfracao2').checked = d.c2;
+                if (d.c3 !== undefined) document.getElementById('checkInfracao3').checked = d.c3;
+                if (d.c4 !== undefined) document.getElementById('checkInfracao4').checked = d.c4;
+                if (d.obs !== undefined) document.getElementById('inputObs').value = d.obs;
+                if (d.relatorio !== undefined) document.getElementById('inputRelatorio').value = d.relatorio;
+                if (d.infrator !== undefined) document.getElementById('inputInfratorNome').value = d.infrator;
+                if (d.ft1Nome !== undefined) document.getElementById('inputFT1Nome').value = d.ft1Nome;
+                if (d.ft1Id !== undefined) document.getElementById('inputFT1Id').value = d.ft1Id;
+                if (d.ft2Nome !== undefined) document.getElementById('inputFT2Nome').value = d.ft2Nome;
+                if (d.ft2Id !== undefined) document.getElementById('inputFT2Id').value = d.ft2Id;
+                if (d.signatures) {
+                    signatures = d.signatures;
+                    ['Infrator', 'FT1', 'FT2'].forEach(r => {
+                        if (signatures[r]) renderSignatureUI(r, signatures[r]);
+                    });
+                }
+            } catch(e) {}
+        }
+
+        function limparTodosOsCampos() {
+            const camposTexto = [
+                'inputNumAuto', 'inputDataAuto', 'inputHoraAuto', 'inputProcesso',
+                'inputRazaoSocial', 'inputCNPJ', 'inputEndereco', 'inputBairro',
+                'inputCidade', 'inputIE', 'inputRepresentante', 'inputCPF',
+                'inputObs', 'inputRelatorio', 'inputInfratorNome',
+                'inputFT1Nome', 'inputFT1Id', 'inputFT2Nome', 'inputFT2Id'
+            ];
+
+            camposTexto.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.value = '';
+            });
+
+            ['checkInfracao1', 'checkInfracao2', 'checkInfracao3', 'checkInfracao4'].forEach(id => {
+                const chk = document.getElementById(id);
+                if (chk) chk.checked = false;
+            });
+
+            signatures = { Infrator: '', FT1: '', FT2: '' };
+            ['Infrator', 'FT1', 'FT2'].forEach(role => {
+                const prev = document.getElementById(`previewSign${role}`);
+                const pl = document.getElementById(`placeholderSign${role}`);
+                const docImg = document.getElementById(`imgSign${role}`);
+                if (prev) { prev.src = ''; prev.classList.add('hidden'); }
+                if (pl) pl.classList.remove('hidden');
+                if (docImg) { docImg.src = ''; docImg.style.visibility = 'hidden'; }
+            });
+
+            clearModalCanvas();
+            Armazem.ls.removeItem(STORAGE_KEY);
+            updatePreview();
+        }
+
+        function rolarParaHistoricoPDF() {
+            setTimeout(() => {
+                const secao = document.getElementById('secao-historico-pdf');
+                if (secao) secao.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 150);
+        }
+
+        document.getElementById('inputCNPJ').addEventListener('input', function(e) {
+            let v = e.target.value.replace(/\D/g, '').slice(0, 14);
+            v = v.replace(/^(\d{2})(\d)/, '$1.$2');
+            v = v.replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3');
+            v = v.replace(/^(\d{2})\.(\d{3})\.(\d{3})(\d)/, '$1.$2.$3/$4');
+            v = v.replace(/^(\d{2})\.(\d{3})\.(\d{3})\/(\d{4})(\d)/, '$1.$2.$3/$4-$5');
+            e.target.value = v;
+            updatePreview();
+        });
+
+        document.getElementById('inputCPF').addEventListener('input', function(e) {
+            let v = e.target.value.replace(/\D/g, '').slice(0, 11);
+            v = v.replace(/^(\d{3})(\d)/, '$1.$2');
+            v = v.replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3');
+            v = v.replace(/^(\d{3})\.(\d{3})\.(\d{3})(\d)/, '$1.$2.$3-$4');
+            e.target.value = v;
+            updatePreview();
+        });
+
+        function maskIdFuncional(e) {
+            let v = e.target.value.replace(/\D/g, '').slice(0, 8);
+            if (v.length > 7) {
+                v = v.replace(/^(\d{7})(\d{1})/, '$1-$2');
+            }
+            e.target.value = v;
+            updatePreview();
+        }
+        document.getElementById('inputFT1Id').addEventListener('input', maskIdFuncional);
+        document.getElementById('inputFT2Id').addEventListener('input', maskIdFuncional);
+
+        document.querySelectorAll('input[type="text"], textarea').forEach(i => i.addEventListener('input', updatePreview));
+        document.getElementById('inputDataAuto').addEventListener('change', updatePreview);
+        document.getElementById('inputHoraAuto').addEventListener('input', updatePreview);
+
+        const modal = document.getElementById('signatureModal');
+        const canvas = document.getElementById('modalCanvas');
+        const ctx = canvas.getContext('2d');
+        let drawing = false;
+
+        function openSignatureModal(roleKey, roleTitle) {
+            currentTargetRole = roleKey;
+            document.getElementById('modalTitle').innerText = `COLETAR ASSINATURA: ${roleTitle}`;
+            modal.classList.add('modal-active');
+            setTimeout(() => {
+                canvas.width = canvas.getBoundingClientRect().width;
+                canvas.height = canvas.getBoundingClientRect().height;
+                ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.strokeStyle = '#000';
+                clearModalCanvas();
+            }, 50);
+        }
+
+        function closeSignatureModal() { modal.classList.remove('modal-active'); }
+        function clearModalCanvas() { ctx.clearRect(0, 0, canvas.width, canvas.height); }
+
+        function getPos(e) {
+            const r = canvas.getBoundingClientRect();
+            const cx = e.touches ? e.touches[0].clientX : e.clientX;
+            const cy = e.touches ? e.touches[0].clientY : e.clientY;
+            return { x: cx - r.left, y: cy - r.top };
+        }
+
+        canvas.addEventListener('mousedown', (e) => { drawing = true; const p = getPos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); });
+        canvas.addEventListener('mousemove', (e) => { if (!drawing) return; const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); });
+        canvas.addEventListener('mouseup', () => drawing = false);
+        canvas.addEventListener('mouseleave', () => drawing = false);
+        canvas.addEventListener('touchstart', (e) => { drawing = true; const p = getPos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); }, { passive: false });
+        canvas.addEventListener('touchmove', (e) => { if (!drawing) return; e.preventDefault(); const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); }, { passive: false });
+        canvas.addEventListener('touchend', () => drawing = false);
+
+        function saveSignature() {
+            const dataURL = canvas.toDataURL('image/png');
+            signatures[currentTargetRole] = dataURL;
+            renderSignatureUI(currentTargetRole, dataURL);
+            closeSignatureModal();
+            saveDataToStorage();
+        }
+
+        function renderSignatureUI(role, dataURL) {
+            const prev = document.getElementById(`previewSign${role}`);
+            const pl = document.getElementById(`placeholderSign${role}`);
+            if (prev) { prev.src = dataURL; prev.classList.remove('hidden'); }
+            if (pl) pl.classList.add('hidden');
+            const docImg = document.getElementById(`imgSign${role}`);
+            if (docImg) { docImg.src = dataURL; docImg.style.visibility = 'visible'; }
+        }
+
+        function scrollToPreview() { document.getElementById('previewAnchor').scrollIntoView({ behavior: 'smooth' }); }
+
+        function rolarParaTopoAposLimpar() {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            // correção de segurança caso a rolagem suave seja interrompida pela mudança de layout
+            setTimeout(() => {
+                if (window.pageYOffset > 2) window.scrollTo({ top: 0, behavior: 'auto' });
+            }, 1200);
+        }
+
+                function confirmClearAllForm() {
+            Swal.fire({
+                title: 'TEM CERTEZA?',
+                html: "<span class='text-amber-500 font-bold'>ATENÇÃO:  </span> ISTO IRÁ <span class='text-red-500 font-bold'> 'APAGAR' TODOS OS CAMPOS PREENCHIDOS NA PÁGINA </span>!",
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#000000',
+                confirmButtonText: 'OK',
+                cancelButtonText: 'CANCELAR',
+                returnFocus: false,
+                didClose: () => {
+                    if (window.foiConfirmadoLimpar) {
+                        window.foiConfirmadoLimpar = false;
+                        setTimeout(() => { rolarParaTopoAposLimpar(); }, 100);
+                    }
+                }
+            }).then((res) => {
+                if (res.isConfirmed) {
+                    window.foiConfirmadoLimpar = true;
+                    limparTodosOsCampos();
+                }
+            });
+        }
+
+        const CAMPOS_OBRIGATORIOS = [
+            { id: 'inputNumAuto', label: 'Nº do Auto de Infração' },
+            { id: 'inputDataAuto', label: 'Data do Auto' },
+            { id: 'inputHoraAuto', label: 'Hora do Auto' },
+            { id: 'inputProcesso', label: 'Processo' },
+            { id: 'inputRazaoSocial', label: 'Razão Social' },
+            { id: 'inputCNPJ', label: 'CNPJ' },
+            { id: 'inputEndereco', label: 'Endereço' },
+            { id: 'inputBairro', label: 'Bairro' },
+            { id: 'inputCidade', label: 'Cidade' },
+            { id: 'inputRepresentante', label: 'Nome do Representante/Responsável' },
+            { id: 'inputCPF', label: 'CPF' },
+            { id: 'inputRelatorio', label: 'Relatório da Infração' },
+            { id: 'inputInfratorNome', label: 'Nome do Responsável Infrator' },
+            { id: 'inputFT1Nome', label: 'Nome do Agente (Força-Tarefa 1)' },
+            { id: 'inputFT1Id', label: 'Id. Funcional (Força-Tarefa 1)' },
+            { id: 'inputFT2Nome', label: 'Nome do Agente (Força-Tarefa 2)' },
+            { id: 'inputFT2Id', label: 'Id. Funcional (Força-Tarefa 2)' }
+        ];
+
+        function limparDestaquesInvalidos() {
+            document.querySelectorAll('.campo-invalido').forEach(el => el.classList.remove('campo-invalido'));
+            const grupo = document.getElementById('grupoInfracoes');
+            if (grupo) grupo.classList.remove('grupo-invalido');
+        }
+
+        function rolarCampoParaCentro(el, aoTerminar) {
+            if (!el || !el.getBoundingClientRect) {
+                if (aoTerminar) aoTerminar();
+                return;
+            }
+            const rect = el.getBoundingClientRect();
+            const meio = rect.top + window.pageYOffset - (window.innerHeight / 2) + (rect.height / 2);
+            window.scrollTo({ top: Math.max(0, meio), behavior: 'smooth' });
+            if (!aoTerminar) return;
+
+            // aguarda a rolagem suave terminar para só então executar a ação (colocar o cursor)
+            let ultimo = window.pageYOffset, estavel = 0, quadros = 0;
+            const acompanhar = () => {
+                quadros++;
+                const atual = window.pageYOffset;
+                estavel = Math.abs(atual - ultimo) < 1 ? estavel + 1 : 0;
+                ultimo = atual;
+                if (estavel >= 8 || quadros > 90) aoTerminar();
+                else requestAnimationFrame(acompanhar);
+            };
+            requestAnimationFrame(acompanhar);
+        }
+
+        function focarNoCampo(el) {
+            if (!el || !el.focus) return;
+            try { el.focus({ preventScroll: true }); } catch (_) { el.focus(); }
+            try { if (el.select && el.tagName !== 'SELECT') el.select(); } catch (_) {}
+        }
+
+        // Chamada SOMENTE depois que o alerta fechou: rola o campo para o meio da tela e então coloca o cursor
+        function irParaCampoAposAlerta(alvo, campo) {
+            setTimeout(() => {
+                rolarCampoParaCentro(alvo, () => focarNoCampo(campo));
+            }, 120);
+        }
+
+        function focarCampoInvalido(el) {
+            el.classList.add('campo-invalido');
+            irParaCampoAposAlerta(el, el);
+        }
+
+        function validateForm() {
+            limparDestaquesInvalidos();
+
+            for (const campo of CAMPOS_OBRIGATORIOS) {
+                const el = document.getElementById(campo.id);
+                if (el && campoVazio(el)) {
+                    el.classList.add('campo-invalido');
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'CAMPO OBRIGATÓRIO',
+                        html: `<span class="text-amber-500 font-bold">ATENÇÃO:</span> PREENCHA O CAMPO<br><b style="font-size:18px; color:#E53935;">"${campo.label.toUpperCase()}"</b>!`,
+                        returnFocus: false,
+                        didClose: () => focarCampoInvalido(el)
+                    });
+                    return false;
+                }
+            }
+
+            const checkOutras = document.getElementById('checkInfracao2');
+            const inputObs = document.getElementById('inputObs');
+            if (checkOutras.checked && !inputObs.value.trim()) {
+                inputObs.classList.add('campo-invalido');
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'CAMPO OBRIGATÓRIO',
+                    html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> PREENCHA O CAMPO<br><b style="font-size:18px; color:#E53935;">"OBS."</b>, POIS <b>"OUTRAS INFRAÇÕES"</b> ESTÁ MARCADO!',
+                    returnFocus: false,
+                    didClose: () => focarCampoInvalido(inputObs)
+                });
+                return false;
+            }
+
+            const algumaInfracaoMarcada = ['checkInfracao1', 'checkInfracao2', 'checkInfracao3', 'checkInfracao4']
+                .some(id => document.getElementById(id).checked);
+            if (!algumaInfracaoMarcada) {
+                const grupo = document.getElementById('grupoInfracoes');
+                const primeiroCheck = document.getElementById('checkInfracao1');
+                if (grupo) grupo.classList.add('grupo-invalido');
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'CAMPO OBRIGATÓRIO',
+                    html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> MARQUE AO MENOS <span class="text-red-500 font-bold">UMA INFRAÇÃO/TIPIFICAÇÃO</span>!',
+                    returnFocus: false,
+                    didClose: () => irParaCampoAposAlerta(grupo, primeiroCheck)
+                });
+                return false;
+            }
+
+            if (!signatures.FT1) {
+                const boxSig = document.getElementById('boxFT1');
+                if (boxSig) boxSig.classList.add('campo-invalido');
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'ASSINATURA OBRIGATÓRIA',
+                    html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> A ASSINATURA DO <br><b style="font-size:18px; color:#E53935;">"MEMBRO DA FORÇA-TAREFA 1"</b> É OBRIGATÓRIA!',
+                    returnFocus: false,
+                    didClose: () => {
+                        irParaCampoAposAlerta(boxSig, null);
+                        setTimeout(() => { if (boxSig) boxSig.classList.remove('campo-invalido'); }, 2500);
+                    }
+                });
+                return false;
+            }
+
+            return true;
+        }
+
+        document.addEventListener('input', (e) => {
+            if (e.target.classList && e.target.classList.contains('campo-invalido') && e.target.value && e.target.value.trim()) {
+                e.target.classList.remove('campo-invalido');
+            }
+        });
+        document.addEventListener('change', (e) => {
+            if (e.target.matches('#checkInfracao1, #checkInfracao2, #checkInfracao3, #checkInfracao4')) {
+                const algumaMarcada = ['checkInfracao1', 'checkInfracao2', 'checkInfracao3', 'checkInfracao4']
+                    .some(id => document.getElementById(id).checked);
+                const grupo = document.getElementById('grupoInfracoes');
+                if (algumaMarcada && grupo) grupo.classList.remove('grupo-invalido');
+                if (!e.target.checked || e.target.id !== 'checkInfracao2') {
+                    const obs = document.getElementById('inputObs');
+                    if (!document.getElementById('checkInfracao2').checked) obs.classList.remove('campo-invalido');
+                }
+            }
+        });
+
+        async function generatePDF(compartilhar = true) {
+            if (!validateForm()) return;
+            const element = document.getElementById('pdfContent');
+            const razao = (document.getElementById('inputRazaoSocial').value.trim() || 'SEM RAZAO SOCIAL').toUpperCase();
+            const numAuto = document.getElementById('inputNumAuto').value.trim() || '0000';
+            const cnpjAtual = document.getElementById('inputCNPJ').value;
+            const inputDataVal = document.getElementById('inputDataAuto').value;
+            const dataFormatada = inputDataVal
+                ? inputDataVal.split('-').reverse().join('-')
+                : new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
+
+            const nomeArquivo = `AUTO DE INFRAÇÃO ${numAuto}-${window.ANO_VIGENTE} - ${razao} - ${dataFormatada}.pdf`;
+
+            Swal.fire({
+                title: 'GERANDO PDF...',
+                html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> AGUARDE O PROCESSAMENTO...',
+                allowOutsideClick: false,
+                didOpen: () => Swal.showLoading()
+            });
+
+            // Configuração com travamento de scroll e scale calibrado
+            const opt = {
+                margin: [4, 4, 4, 4],
+                filename: nomeArquivo,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: {
+                    scale: 2,
+                    useCORS: true,
+                    allowTaint: true,
+                    backgroundColor: '#ffffff',
+                    scrollX: 0,
+                    scrollY: 0
+                },
+                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            };
+
+            let blob = null;
+            try {
+                // Rola para o elemento antes de capturar para evitar corte por viewport deslocado
+                element.scrollIntoView();
+                await new Promise(r => setTimeout(r, 200));
+
+                blob = await html2pdf().set(opt).from(element).outputPdf('blob');
+            } catch (err) {
+                console.error("Erro no processamento do PDF:", err);
+            }
+
+            if (!blob) {
+                Swal.close();
+                Swal.fire({
+                    icon: 'error',
+                    title: 'ERRO',
+                    html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> <span class="text-red-500 font-bold">FALHA AO RENDERIZAR O DOCUMENTO</span>.'
+                });
+                return;
+            }
+
+            try {
+                const uri = await blobToDataURI(blob);
+                const novoItem = {
+                    id: Date.now(),
+                    nome: nomeArquivo,
+                    empresa: razao,
+                    cnpj: cnpjAtual,
+                    dataGeracao: new Date().toLocaleString('pt-BR'),
+                    timestamp: Date.now(),
+                    dataUri: uri
+                };
+                salvarPDFHistorico(novoItem);
+
+                if (!compartilhar) {
+                    const downloadLink = document.createElement('a');
+                    downloadLink.href = uri;
+                    downloadLink.download = nomeArquivo;
+                    document.body.appendChild(downloadLink);
+                    downloadLink.click();
+                    downloadLink.remove();
+                }
+
+                // limparTodosOsCampos();
+                rolarParaHistoricoPDF();
+
+                if (compartilhar) {
+                    await compartilharPDFGeradoWhatsApp(blob, nomeArquivo);
+                }
+
+                await Swal.fire({
+                    icon: 'success',
+                    title: 'SUCESSO',
+                    html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> AUTO DE INFRAÇÃO GERADO COM SUCESSO!<br>BAIXE PELO <b>HISTÓRICO ABAIXO</b> QUANDO QUISER.',
+                    returnFocus: false
+                });
+
+                rolarParaHistoricoPDF();
+            } catch (err) {
+                console.error(err);
+                Swal.close();
+                Swal.fire({ icon: 'error', title: 'ERRO', html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> <span class="text-red-500 font-bold">FALHA AO SALVAR/COMPARTILHAR O PDF</span>.', confirmButtonColor: '#000000' });
+            }
+        }
+
+        function blobToDataURI(blob) {
+            return new Promise((resolve, reject) => {
+                const r = new FileReader();
+                r.onloadend = () => resolve(r.result);
+                r.onerror = reject;
+                r.readAsDataURL(blob);
+            });
+        }
+
+        async function compartilharPDFGeradoWhatsApp(blob, nomeArquivo) {
+            try {
+                const arquivo = new File([blob], nomeArquivo, { type: 'application/pdf' });
+                if (navigator.share && navigator.canShare && navigator.canShare({ files: [arquivo] })) {
+                    await navigator.share({
+                        files: [arquivo],
+                        title: nomeArquivo,
+                        text: 'PDF GERADO PELO SISTEMA INTEGRADO DETRAN.RJ!'
+                    });
+                } else {
+                    await Swal.fire({
+                        icon: 'info',
+                        title: 'COMPARTILHAMENTO NÃO DISPONÍVEL',
+                        html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> ESTE NAVEGADOR <span class="text-red-500 font-bold">NÃO SUPORTA COMPARTILHAMENTO DIRETO</span>. BAIXE O PDF PELO HISTÓRICO ABAIXO E ANEXE MANUALMENTE NO WHATSAPP.',
+                        confirmButtonColor: '#000000',
+                        returnFocus: false
+                    });
+                }
+            } catch (e) {
+                if (e.name !== 'AbortError') {
+                    console.warn(e);
+                }
+            }
+        }
+
+        function salvarPDFHistorico(obj) {
+            let h = JSON.parse(Armazem.ls.getItem('historico_pdfs_infracao')) || [];
+            h.unshift(obj);
+            try { Armazem.ls.setItem('historico_pdfs_infracao', JSON.stringify(h)); } catch(e) { h.pop(); }
+            renderizarGridPDFs();
+        }
+
+        function renderizarGridPDFs() {
+            const container = document.getElementById('grid-pdfs-container');
+            if (!container) return;
+            const termo = (document.getElementById('busca-pdf')?.value || '').toLowerCase().trim();
+            let h = JSON.parse(Armazem.ls.getItem('historico_pdfs_infracao')) || [];
+            if (termo) {
+                h = h.filter(i => (i.nome + ' ' + i.empresa + ' ' + i.cnpj).toLowerCase().includes(termo));
+            }
+            if (!h.length) {
+                container.innerHTML = `<div class="pdf-empty-state">NENHUM PDF NO HISTÓRICO</div>`;
+                return;
+            }
+            container.innerHTML = h.map(item => `
+                <div class="pdf-card">
+                  <div class="pdf-card-info" onclick="abrirPDF('${item.id}')">
+                    <span class="pdf-card-icon">📄</span>
+                    <div class="pdf-card-text">
+                      <div class="pdf-card-title" title="${item.nome}">${(item.nome || item.empresa || '').replace(/\.pdf$/i, '')}</div>
+                      <div class="pdf-card-meta">GERADO EM: ${item.dataGeracao}</div>
+                    </div>
+                  </div>
+                  <div class="pdf-card-actions">
+                    <button class="btn-icon-pdf" onclick="baixarPDFHistorico('${item.id}')" title="Baixar PDF">⬇️</button>
+                    <button class="btn-icon-pdf" onclick="abrirPDF('${item.id}')" title="Visualizar">👁️</button>
+                    <button class="btn-icon-pdf" onclick="excluirPDF('${item.id}')" title="Excluir">🗑️</button>
+                  </div>
+                </div>
+            `).join('');
+        }
+
+                function avisarDownloadEAtualizar() {
+            Swal.fire({
+                icon: 'success',
+                title: 'DOWNLOAD INICIADO!',
+                html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> O PDF ESTÁ SENDO BAIXADO. A PÁGINA SERÁ ATUALIZADA.',
+                timer: 1500,
+                timerProgressBar: true,
+                showConfirmButton: false,
+                allowOutsideClick: false,
+                allowEscapeKey: false
+            }).then(() => { window.location.reload(); });
+        }
+
+        async function baixarPDFHistorico(id) {
+            const h = JSON.parse(Armazem.ls.getItem('historico_pdfs_infracao')) || [];
+            const p = h.find(i => String(i.id) === String(id));
+            await Armazem.completar(p);
+            if (!p || !p.dataUri) return;
+
+            try {
+                const url = URL.createObjectURL(dataUriParaBlob(p.dataUri));
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = p.nome || 'AUTO_DE_INFRACAO.pdf';
+                document.body.appendChild(a);
+                a.click();
+                avisarDownloadEAtualizar();
+                document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(url), 4000);
+            } catch (e) {
+                console.error('Erro ao baixar PDF:', e);
+                Swal.fire({
+                    icon: 'error',
+                    title: 'ERRO AO BAIXAR PDF',
+                    html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> <span class="text-red-500 font-bold">NÃO FOI POSSÍVEL</span> BAIXAR O PDF SALVO.',
+                    confirmButtonColor: '#000000'
+                });
+            }
+        }
+
+        function dataUriParaBlob(dataUri) {
+            const partes = dataUri.split(',');
+            const mime = ((partes[0].match(/:(.*?);/) || [])[1]) || 'application/pdf';
+            const bin = atob(partes[1]);
+            const bytes = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) {
+                bytes[i] = bin.charCodeAt(i);
+            }
+            return new Blob([bytes], { type: mime });
+        }
+
+        async function abrirPDF(id) {
+            const h = JSON.parse(Armazem.ls.getItem('historico_pdfs_infracao')) || [];
+            const p = h.find(i => String(i.id) === String(id));
+            await Armazem.completar(p);
+            if (!p || !p.dataUri) return;
+
+            let url;
+            try {
+                url = URL.createObjectURL(dataUriParaBlob(p.dataUri));
+            } catch (e) {
+                console.error('Erro ao preparar PDF:', e);
+                Swal.fire({
+                    icon: 'error',
+                    title: 'ERRO AO ABRIR PDF',
+                    html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> <span class="text-red-500 font-bold">NÃO FOI POSSÍVEL</span> ABRIR O PDF SALVO.',
+                    confirmButtonColor: '#000000'
+                });
+                return;
+            }
+
+            const win = window.open(url, '_blank');
+            if (!win) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'BLOQUEADOR DE POP-UP DETECTADO',
+                    html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> PERMITA POP-UPS PARA ABRIR O PDF SALVO.',
+                    confirmButtonColor: '#000000'
+                });
+            }
+        }
+
+        function excluirPDF(id) {
+            Swal.fire({
+                title: 'EXCLUIR PDF?',
+                html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> ESTA AÇÃO <span class="text-red-500 font-bold">NÃO PODERÁ SER DESFEITA </span>.',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                cancelButtonColor: '#000000',
+                confirmButtonText: 'EXCLUIR',
+                cancelButtonText: 'CANCELAR'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    let h = JSON.parse(Armazem.ls.getItem('historico_pdfs_infracao')) || [];
+                    h = h.filter(i => String(i.id) !== String(id));
+                    Armazem.ls.setItem('historico_pdfs_infracao', JSON.stringify(h));
+                    renderizarGridPDFs();
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'EXCLUÍDO!',
+                        html: '<span class="text-amber-500 font-bold">ATENÇÃO:</span> O PDF FOI EXCLUÍDO DO HISTÓRICO.',
+                        timer: 1500,
+                        showConfirmButton: false
+                    });
+                }
+            });
+        }
+    </script>
+<script>
+/* Campos numéricos: texto + teclado numérico (evita o navegador apagar o valor mascarado) */
+document.addEventListener('input', function (e) {
+    var t = e.target;
+    if (t && t.hasAttribute && t.hasAttribute('data-so-numeros')) {
+        var v = t.value.replace(/\D/g, '');
+        if (v !== t.value) t.value = v;
+    }
+});
+</script>
+<script>
+(function () {
+    if (window.Armazem) return;
+    var d = document.createElement('div');
+    d.setAttribute('style', 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:99999;background:#fff;color:#b91c1c;font:700 16px sans-serif;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;text-transform:uppercase');
+    d.textContent = 'ARQUIVO "armazem.js" NÃO ENCONTRADO. COPIE armazem.js, nuvem.js E firebase-config.js PARA A MESMA PASTA DESTA PÁGINA.';
+    document.body.appendChild(d);
+})();
+</script>
+</body>
+</html>
